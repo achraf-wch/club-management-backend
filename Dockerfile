@@ -16,16 +16,16 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /app
 
-
 COPY composer.json composer.lock ./
 
-
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
 COPY . .
+
 RUN php artisan package:discover --ansi
 
 RUN chmod -R 775 storage bootstrap/cache
 
 EXPOSE 8000
 
-CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+CMD php artisan migrate --force || true && php artisan serve --host=0.0.0.0 --port=${PORT:-8000}

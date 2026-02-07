@@ -17,7 +17,8 @@ class WelcomeEmail extends Mailable
     public function __construct(
         public Person $person,
         public Club $club,
-        public string $role  // ← Changed from $membership to $role
+        public string $role,
+        public ?string $password = null  // Add password parameter
     ) {
     }
 
@@ -25,7 +26,7 @@ class WelcomeEmail extends Mailable
     {
         return new Envelope(
             to: $this->person->email,
-            subject: 'Welcome to ' . $this->club->name . '!',
+            subject: 'Bienvenue au ' . $this->club->name . ' - Vos identifiants',
         );
     }
 

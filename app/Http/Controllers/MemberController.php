@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Hash; 
 
 class MemberController extends Controller
 {
@@ -76,103 +77,130 @@ class MemberController extends Controller
     }
 }
 
-    /**
-     * Add a member to a club
-     */
-    public function store(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'person_id' => 'required|exists:persons,id',
-            'club_id' => 'required|exists:clubs,id',
-            'role' => 'required|in:president,board,member',
-            'position' => 'nullable|string|max:100',
-            'status' => 'sometimes|in:active,inactive,pending',
-        ]);
+  /**
+ * Add a member to a club
+ */
+public function store(Request $request)
+{
+    $validator = Validator::make($request->all(), [
+        'person_id' => 'required|exists:persons,id',
+        'club_id' => 'required|exists:clubs,id',
+        'role' => 'required|in:president,board,member',
+        'position' => 'nullable|string|max:100',
+        'status' => 'sometimes|in:active,inactive,pending',
+    ]);
 
-        if ($validator->fails()) {
+    if ($validator->fails()) {
+        return response()->json([
+            'message' => 'Erreur de validation',
+            'errors' => $validator->errors()
+        ], 422);
+    }
+
+    try {
+        $exists = DB::table('club_members')
+            ->where('person_id', $request->person_id)
+            ->where('club_id', $request->club_id)
+            ->where('status', 'active')
+            ->exists();
+
+        if ($exists) {
             return response()->json([
-                'message' => 'Erreur de validation',
-                'errors' => $validator->errors()
-            ], 422);
+                'message' => 'Cette personne est déjà membre de ce club'
+            ], 409);
         }
 
-        try {
-            $exists = DB::table('club_members')
-                ->where('person_id', $request->person_id)
+        if ($request->role === 'president') {
+            $hasPresident = DB::table('club_members')
                 ->where('club_id', $request->club_id)
+                ->where('role', 'president')
                 ->where('status', 'active')
                 ->exists();
 
-            if ($exists) {
+            if ($hasPresident) {
                 return response()->json([
-                    'message' => 'Cette personne est déjà membre de ce club'
+                    'message' => 'Ce club a déjà un président actif'
                 ], 409);
             }
-
-            if ($request->role === 'president') {
-                $hasPresident = DB::table('club_members')
-                    ->where('club_id', $request->club_id)
-                    ->where('role', 'president')
-                    ->where('status', 'active')
-                    ->exists();
-
-                if ($hasPresident) {
-                    return response()->json([
-                        'message' => 'Ce club a déjà un président actif'
-                    ], 409);
-                }
-            }
-
-            $membershipId = DB::table('club_members')->insertGetId([
-                'person_id' => $request->person_id,
-                'club_id' => $request->club_id,
-                'role' => $request->role,
-                'position' => $request->position,
-                'status' => $request->status ?? 'active',
-                'joined_at' => now(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            $this->updateClubMemberCounts($request->club_id);
-            
-            try {
-                $person = Person::find($request->person_id);
-                $club = Club::find($request->club_id);
-                Mail::send(new WelcomeEmail($person, $club, $request->role));
-            } catch (\Exception $e) {
-                \Log::error('Email failed: ' . $e->getMessage());
-            }
-
-            $membership = DB::table('club_members')
-                ->join('persons', 'club_members.person_id', '=', 'persons.id')
-                ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
-                ->where('club_members.id', $membershipId)
-                ->select(
-                    'club_members.*', 
-                    'persons.first_name', 
-                    'persons.last_name',
-                    'persons.avatar',
-                    'clubs.name as club_name',
-                    'clubs.logo as club_logo'
-                )
-                ->first();
-            
-            // Add full URLs
-            $membership->avatar_url = $membership->avatar ? asset('storage/' . $membership->avatar) : null;
-            $membership->club_logo_url = $membership->club_logo ? asset('storage/' . $membership->club_logo) : null;
-
-            return response()->json([
-                'message' => 'Membre ajouté avec succès',
-                'membership' => $membership
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de l\'ajout du membre',
-                'error' => $e->getMessage()
-            ], 500);
         }
+
+        $membershipId = DB::table('club_members')->insertGetId([
+            'person_id' => $request->person_id,
+            'club_id' => $request->club_id,
+            'role' => $request->role,
+            'position' => $request->position,
+            'status' => $request->status ?? 'active',
+            'joined_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->updateClubMemberCounts($request->club_id);
+        
+        // Send welcome email with credentials
+        try {
+            $person = Person::find($request->person_id);
+            $club = Club::find($request->club_id);
+            
+            // Generate a temporary password for the user
+            $temporaryPassword = $this->generateTemporaryPassword();
+            
+            // Update the person's password
+            $person->password = Hash::make($temporaryPassword);
+            $person->save();
+            
+            // Send email with credentials
+            Mail::send(new WelcomeEmail($person, $club, $request->role, $temporaryPassword));
+            
+        } catch (\Exception $e) {
+            \Log::error('Email failed: ' . $e->getMessage());
+        }
+
+        $membership = DB::table('club_members')
+            ->join('persons', 'club_members.person_id', '=', 'persons.id')
+            ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+            ->where('club_members.id', $membershipId)
+            ->select(
+                'club_members.*', 
+                'persons.first_name', 
+                'persons.last_name',
+                'persons.avatar',
+                'clubs.name as club_name',
+                'clubs.logo as club_logo'
+            )
+            ->first();
+        
+        // Add full URLs
+        $membership->avatar_url = $membership->avatar ? asset('storage/' . $membership->avatar) : null;
+        $membership->club_logo_url = $membership->club_logo ? asset('storage/' . $membership->club_logo) : null;
+
+        return response()->json([
+            'message' => 'Membre ajouté avec succès',
+            'membership' => $membership
+        ], 201);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Erreur lors de l\'ajout du membre',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
+
+/**
+ * Generate a temporary password
+ */
+private function generateTemporaryPassword()
+{
+    $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+    $password = '';
+    $length = 12;
+    
+    for ($i = 0; $i < $length; $i++) {
+        $password .= $characters[random_int(0, strlen($characters) - 1)];
+    }
+    
+    return $password;
+}
 
     /**
      * Get a specific membership using JOIN

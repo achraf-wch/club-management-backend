@@ -10,217 +10,161 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Hash; 
 
 class MemberController extends Controller
 {
-    /**
-     * Helper function to generate full image URLs
-     */
-    private function getFullImageUrl($path)
+    public function index(Request $request)
     {
-        if (!$path) {
-            return null;
-        }
-        
-        if (str_starts_with($path, 'http')) {
-            return $path;
-        }
-        
-        // Use url() instead of asset() for consistency
-        return url('storage/' . $path);
-    }
+        try {
+            $query = DB::table('club_members')
+                ->join('persons', 'club_members.person_id', '=', 'persons.id')
+                ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+                ->select(
+                    'club_members.id',
+                    'club_members.person_id',
+                    'club_members.club_id',
+                    'club_members.role',
+                    'club_members.status',
+                    'club_members.position',
+                    'club_members.joined_at',
+                    'club_members.left_at',
+                    'persons.first_name',
+                    'persons.last_name',
+                    'persons.email',
+                    'persons.avatar',
+                    'persons.phone',
+                    'persons.member_code',
+                    'clubs.name as club_name',
+                    'clubs.logo as club_logo'
+                );
 
-    /**
-     * Get all members using JOIN (optionally filtered)
-     */
-   public function index(Request $request)
-{
-    try {
-        $query = DB::table('club_members')
-            ->join('persons', 'club_members.person_id', '=', 'persons.id')
-            ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
-            ->select(
-                'club_members.id',
-                'club_members.person_id',
-                'club_members.club_id',
-                'club_members.role',
-                'club_members.status',
-                'club_members.position',
-                'club_members.joined_at',
-                'club_members.left_at',
-                'persons.first_name',
-                'persons.last_name',
-                'persons.email',
-                'persons.avatar',
-                'persons.phone',
-                'persons.member_code',
-                'clubs.name as club_name',
-                'clubs.logo as club_logo'
-            );
+            if ($request->has('club_id')) {
+                $query->where('club_members.club_id', $request->club_id);
+            }
 
-        if ($request->has('club_id')) {
-            $query->where('club_members.club_id', $request->club_id);
-        }
+            if ($request->has('person_id')) {
+                $query->where('club_members.person_id', $request->person_id);
+            }
 
-        if ($request->has('person_id')) {
-            $query->where('club_members.person_id', $request->person_id);
-        }
+            if ($request->has('status')) {
+                $query->where('club_members.status', $request->status);
+            }
 
-        if ($request->has('status')) {
-            $query->where('club_members.status', $request->status);
-        }
+            if ($request->has('role')) {
+                $query->where('club_members.role', $request->role);
+            }
 
-        if ($request->has('role')) {
-            $query->where('club_members.role', $request->role);
-        }
+            $members = $query->get();
+            
+            $members = $members->map(function($member) {
+                $member->avatar_url = $member->avatar ? url('storage/' . $member->avatar) : null;
+                $member->club_logo_url = $member->club_logo ? url('storage/' . $member->club_logo) : null;
+                return $member;
+            });
 
-        $members = $query->get();
-        
-        // FIXED: Use consistent URL generation method
-        $members = $members->map(function($member) {
-            $member->avatar_url = $this->getFullImageUrl($member->avatar);
-            $member->club_logo_url = $this->getFullImageUrl($member->club_logo);
-            return $member;
-        });
-
-        return response()->json($members, 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Erreur lors de la récupération des membres',
-            'error' => $e->getMessage()
-        ], 500);
-    }
-}
-
-  /**
- * Add a member to a club
- */
-public function store(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'person_id' => 'required|exists:persons,id',
-        'club_id' => 'required|exists:clubs,id',
-        'role' => 'required|in:president,board,member',
-        'position' => 'nullable|string|max:100',
-        'status' => 'sometimes|in:active,inactive,pending',
-    ]);
-
-    if ($validator->fails()) {
-        return response()->json([
-            'message' => 'Erreur de validation',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-
-    try {
-        $exists = DB::table('club_members')
-            ->where('person_id', $request->person_id)
-            ->where('club_id', $request->club_id)
-            ->where('status', 'active')
-            ->exists();
-
-        if ($exists) {
+            return response()->json($members, 200);
+        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Cette personne est déjà membre de ce club'
-            ], 409);
+                'message' => 'Erreur lors de la récupération des membres',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function store(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'person_id' => 'required|exists:persons,id',
+            'club_id' => 'required|exists:clubs,id',
+            'role' => 'required|in:president,board,member',
+            'position' => 'nullable|string|max:100',
+            'status' => 'sometimes|in:active,inactive,pending',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
-        if ($request->role === 'president') {
-            $hasPresident = DB::table('club_members')
+        try {
+            $exists = DB::table('club_members')
+                ->where('person_id', $request->person_id)
                 ->where('club_id', $request->club_id)
-                ->where('role', 'president')
                 ->where('status', 'active')
                 ->exists();
 
-            if ($hasPresident) {
+            if ($exists) {
                 return response()->json([
-                    'message' => 'Ce club a déjà un président actif'
+                    'message' => 'Cette personne est déjà membre de ce club'
                 ], 409);
             }
-        }
 
-        $membershipId = DB::table('club_members')->insertGetId([
-            'person_id' => $request->person_id,
-            'club_id' => $request->club_id,
-            'role' => $request->role,
-            'position' => $request->position,
-            'status' => $request->status ?? 'active',
-            'joined_at' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            if ($request->role === 'president') {
+                $hasPresident = DB::table('club_members')
+                    ->where('club_id', $request->club_id)
+                    ->where('role', 'president')
+                    ->where('status', 'active')
+                    ->exists();
 
-        $this->updateClubMemberCounts($request->club_id);
-        
-        // Send welcome email with credentials
-        try {
-            $person = Person::find($request->person_id);
-            $club = Club::find($request->club_id);
+                if ($hasPresident) {
+                    return response()->json([
+                        'message' => 'Ce club a déjà un président actif'
+                    ], 409);
+                }
+            }
+
+            $membershipId = DB::table('club_members')->insertGetId([
+                'person_id' => $request->person_id,
+                'club_id' => $request->club_id,
+                'role' => $request->role,
+                'position' => $request->position,
+                'status' => $request->status ?? 'active',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $this->updateClubMemberCounts($request->club_id);
             
-            // Generate a temporary password for the user
-            $temporaryPassword = $this->generateTemporaryPassword();
+            try {
+                $person = Person::find($request->person_id);
+                $club = Club::find($request->club_id);
+                Mail::send(new WelcomeEmail($person, $club, $request->role));
+            } catch (\Exception $e) {
+                \Log::error('Email failed: ' . $e->getMessage());
+            }
+
+            $membership = DB::table('club_members')
+                ->join('persons', 'club_members.person_id', '=', 'persons.id')
+                ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+                ->where('club_members.id', $membershipId)
+                ->select(
+                    'club_members.*', 
+                    'persons.first_name', 
+                    'persons.last_name',
+                    'persons.avatar',
+                    'clubs.name as club_name',
+                    'clubs.logo as club_logo'
+                )
+                ->first();
             
-            // Update the person's password
-            $person->password = Hash::make($temporaryPassword);
-            $person->save();
-            
-            // Send email with credentials
-            Mail::send(new WelcomeEmail($person, $club, $request->role, $temporaryPassword));
-            
+            $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
+            $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
+
+            return response()->json([
+                'message' => 'Membre ajouté avec succès',
+                'membership' => $membership
+            ], 201);
         } catch (\Exception $e) {
-            \Log::error('Email failed: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erreur lors de l\'ajout du membre',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $membership = DB::table('club_members')
-            ->join('persons', 'club_members.person_id', '=', 'persons.id')
-            ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
-            ->where('club_members.id', $membershipId)
-            ->select(
-                'club_members.*', 
-                'persons.first_name', 
-                'persons.last_name',
-                'persons.avatar',
-                'clubs.name as club_name',
-                'clubs.logo as club_logo'
-            )
-            ->first();
-        
-        // FIXED: Use consistent URL generation
-        $membership->avatar_url = $this->getFullImageUrl($membership->avatar);
-        $membership->club_logo_url = $this->getFullImageUrl($membership->club_logo);
-
-        return response()->json([
-            'message' => 'Membre ajouté avec succès',
-            'membership' => $membership
-        ], 201);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Erreur lors de l\'ajout du membre',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
-/**
- * Generate a temporary password
- */
-private function generateTemporaryPassword()
-{
-    $characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-    $password = '';
-    $length = 12;
-    
-    for ($i = 0; $i < $length; $i++) {
-        $password .= $characters[random_int(0, strlen($characters) - 1)];
-    }
-    
-    return $password;
-}
-
-    /**
-     * Get a specific membership using JOIN
-     */
     public function show($id)
     {
         try {
@@ -242,14 +186,11 @@ private function generateTemporaryPassword()
                 ->first();
 
             if (!$membership) {
-                return response()->json([
-                    'message' => 'Membre non trouvé'
-                ], 404);
+                return response()->json(['message' => 'Membre non trouvé'], 404);
             }
             
-            // FIXED: Use consistent URL generation
-            $membership->avatar_url = $this->getFullImageUrl($membership->avatar);
-            $membership->club_logo_url = $this->getFullImageUrl($membership->club_logo);
+            $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
+            $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
 
             return response()->json($membership, 200);
         } catch (\Exception $e) {
@@ -260,9 +201,6 @@ private function generateTemporaryPassword()
         }
     }
 
-    /**
-     * Update a membership
-     */
     public function update(Request $request, $id)
     {
         $validator = Validator::make($request->all(), [
@@ -323,9 +261,8 @@ private function generateTemporaryPassword()
                 )
                 ->first();
             
-            // FIXED: Use consistent URL generation
-            $updated->avatar_url = $this->getFullImageUrl($updated->avatar);
-            $updated->club_logo_url = $this->getFullImageUrl($updated->club_logo);
+            $updated->avatar_url = $updated->avatar ? url('storage/' . $updated->avatar) : null;
+            $updated->club_logo_url = $updated->club_logo ? url('storage/' . $updated->club_logo) : null;
 
             return response()->json([
                 'message' => 'Membre mis à jour avec succès',
@@ -339,9 +276,6 @@ private function generateTemporaryPassword()
         }
     }
 
-    /**
-     * Remove a member from a club
-     */
     public function destroy($id, Request $request)
     {
         try {
@@ -362,9 +296,7 @@ private function generateTemporaryPassword()
 
             $this->updateClubMemberCounts($membership->club_id);
 
-            return response()->json([
-                'message' => 'Membre retiré avec succès'
-            ], 200);
+            return response()->json(['message' => 'Membre retiré avec succès'], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Erreur lors de la suppression',
@@ -373,9 +305,6 @@ private function generateTemporaryPassword()
         }
     }
 
-    /**
-     * Get all clubs for a specific person using JOIN
-     */
     public function getPersonClubs($personId)
     {
         try {
@@ -393,8 +322,8 @@ private function generateTemporaryPassword()
                 ->get();
             
             $memberships = $memberships->map(function($membership) {
-                $membership->logo_url = $this->getFullImageUrl($membership->logo);
-                $membership->cover_image_url = $this->getFullImageUrl($membership->cover_image);
+                $membership->logo_url = $membership->logo ? url('storage/' . $membership->logo) : null;
+                $membership->cover_image_url = $membership->cover_image ? url('storage/' . $membership->cover_image) : null;
                 return $membership;
             });
 
@@ -407,9 +336,6 @@ private function generateTemporaryPassword()
         }
     }
 
-    /**
-     * Get club statistics using COUNT queries
-     */
     public function getClubStats($clubId)
     {
         try {
@@ -447,9 +373,6 @@ private function generateTemporaryPassword()
         }
     }
 
-    /**
-     * Update club member counts
-     */
     private function updateClubMemberCounts($clubId)
     {
         $totalMembers = DB::table('club_members')
@@ -469,10 +392,7 @@ private function generateTemporaryPassword()
                 'updated_at' => now(),
             ]);
     }
-    
-    /**
-     * Get current user's club membership info
-     */
+
     public function getMyClubMembership()
     {
         try {
@@ -508,12 +428,11 @@ private function generateTemporaryPassword()
                 return response()->json(['message' => 'Aucune adhésion active trouvée'], 404);
             }
 
-            // FIXED: Use consistent URL generation
             $club = (object)[
                 'id' => $membership->club_id,
                 'name' => $membership->club_name,
                 'logo' => $membership->club_logo,
-                'logo_url' => $this->getFullImageUrl($membership->club_logo),
+                'logo_url' => $membership->club_logo ? url('storage/' . $membership->club_logo) : null,
                 'description' => $membership->club_description,
                 'category' => $membership->club_category,
             ];

@@ -10,9 +10,6 @@ use Illuminate\Support\Facades\Storage;
 
 class PersonController extends Controller
 {
-    /**
-     * Create a new person
-     */
     public function store(Request $request)
     {
         try {
@@ -49,14 +46,12 @@ class PersonController extends Controller
 
             $person = Person::create($data);
             
-            // Add full URL to response
-            $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
 
             return response()->json([
                 'message' => 'Personne créée avec succès',
                 'person' => $person
             ], 201);
-
         } catch (\Exception $e) {
             \Log::error('Error creating person', [
                 'message' => $e->getMessage(),
@@ -72,16 +67,13 @@ class PersonController extends Controller
         }
     }
 
-    /**
-     * Get all persons
-     */
     public function index()
     {
         try {
             $persons = Person::all();
             
             $persons->each(function($person) {
-                $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+                $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
             });
             
             return response()->json($persons, 200);
@@ -90,15 +82,12 @@ class PersonController extends Controller
         }
     }
 
-    /**
-     * Get a specific person
-     */
     public function show($id)
     {
         try {
             $person = Person::findOrFail($id);
             
-            $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
             
             return response()->json($person, 200);
         } catch (\Exception $e) {
@@ -106,9 +95,6 @@ class PersonController extends Controller
         }
     }
 
-    /**
-     * Update a person
-     */
     public function update(Request $request, $id)
     {
         try {
@@ -143,7 +129,7 @@ class PersonController extends Controller
 
             $person->update($data);
             
-            $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
 
             return response()->json(['message' => 'Personne mise à jour', 'person' => $person], 200);
         } catch (\Exception $e) {
@@ -151,9 +137,6 @@ class PersonController extends Controller
         }
     }
 
-    /**
-     * Delete a person
-     */
     public function destroy($id)
     {
         try {

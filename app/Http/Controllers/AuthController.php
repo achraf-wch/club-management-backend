@@ -12,26 +12,6 @@ use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
-    /**
-     * Get club role ordering compatible with both MySQL and PostgreSQL
-     */
-    private function getClubRoleOrdering()
-    {
-        $driver = config('database.default');
-        
-        if ($driver === 'mysql') {
-            return "FIELD(role, 'president', 'board', 'member')";
-        }
-        
-        // PostgreSQL compatible
-        return "CASE 
-            WHEN role = 'president' THEN 1 
-            WHEN role = 'board' THEN 2 
-            WHEN role = 'member' THEN 3 
-            ELSE 4 
-        END";
-    }
-
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -94,7 +74,6 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Compte désactivé'], 403);
             }
 
-            // CRITICAL: Regenerate session
             $request->session()->regenerate();
 
             $clubRole = null;
@@ -103,7 +82,7 @@ class AuthController extends Controller
             if ($person->role === 'user') {
                 $membership = Club_member::where('person_id', $person->id)
                     ->where('status', 'active')
-                    ->orderByRaw($this->getClubRoleOrdering())
+                    ->orderByRaw("FIELD(role, 'president', 'board', 'member')")
                     ->first();
                     
                 if ($membership) {
@@ -122,7 +101,7 @@ class AuthController extends Controller
                     'last_name' => $person->last_name,
                     'email' => $person->email,
                     'avatar' => $person->avatar,
-                    'avatar_url' => $person->avatar ? asset('storage/' . $person->avatar) : null,
+                    'avatar_url' => $person->avatar ? url('storage/' . $person->avatar) : null,
                     'member_code' => $person->member_code,
                     'club_id' => $clubId,
                 ],
@@ -137,9 +116,6 @@ class AuthController extends Controller
         }
     }
 
-    /**
-     * Verify session - Used after Google OAuth callback
-     */
     public function verifySession(Request $request)
     {
         try {
@@ -172,7 +148,7 @@ class AuthController extends Controller
             if ($person->role === 'user') {
                 $membership = Club_member::where('person_id', $person->id)
                     ->where('status', 'active')
-                    ->orderByRaw($this->getClubRoleOrdering())
+                    ->orderByRaw("FIELD(role, 'president', 'board', 'member')")
                     ->first();
                     
                 if ($membership) {
@@ -195,7 +171,7 @@ class AuthController extends Controller
                     'last_name' => $person->last_name,
                     'email' => $person->email,
                     'avatar' => $person->avatar,
-                    'avatar_url' => $person->avatar ? asset('storage/' . $person->avatar) : null,
+                    'avatar_url' => $person->avatar ? url('storage/' . $person->avatar) : null,
                     'member_code' => $person->member_code,
                     'club_id' => $clubId,
                 ],
@@ -228,8 +204,7 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Non authentifié'], 401);
             }
             
-            // Add avatar_url
-            $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
             
             return response()->json(['user' => $person], 200);
         } catch (\Exception $e) {
@@ -259,7 +234,6 @@ class AuthController extends Controller
             
             $data = $request->only(['first_name', 'last_name', 'phone']);
             
-            // Handle avatar file upload
             if ($request->hasFile('avatar')) {
                 if ($person->avatar && \Storage::disk('public')->exists($person->avatar)) {
                     \Storage::disk('public')->delete($person->avatar);
@@ -269,12 +243,9 @@ class AuthController extends Controller
             }
             
             $person->update($data);
-            
-            // Return updated user with fresh data
             $person->refresh();
             
-            // Add full URL to response
-            $person->avatar_url = $person->avatar ? asset('storage/' . $person->avatar) : null;
+            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
             
             Log::info('Profile updated', ['person_id' => $person->id]);
             
@@ -287,7 +258,6 @@ class AuthController extends Controller
 
     public function changePassword(Request $request)
     {
-        // Check if user has a password (for Google-only accounts)
         $person = $request->user();
         $hasPassword = !empty($person->password);
         
@@ -315,7 +285,6 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Non authentifié'], 401);
             }
             
-            // Only verify current password if user has one
             if ($hasPassword) {
                 if (!Hash::check($request->current_password, $person->password)) {
                     return response()->json([
@@ -324,7 +293,6 @@ class AuthController extends Controller
                 }
             }
             
-            // Update password
             $person->update(['password' => Hash::make($request->new_password)]);
             
             Log::info('Password changed', ['person_id' => $person->id]);

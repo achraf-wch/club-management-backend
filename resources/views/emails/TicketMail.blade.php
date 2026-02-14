@@ -1,163 +1,377 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background-color: #f4f4f4;
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
         }
-        .container {
-            max-width: 600px;
-            margin: 20px auto;
-            background: #fff;
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f1f5f9;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            line-height: 1.6;
         }
-        .header {
+        
+        .email-wrapper {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
+        }
+        
+        .email-header {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            padding: 40px 30px;
             text-align: center;
-            padding: 20px 0;
-            border-bottom: 2px solid #4CAF50;
+            position: relative;
+            overflow: hidden;
         }
-        .header h1 {
-            color: #4CAF50;
-            margin: 0;
+        
+        .email-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+            pointer-events: none;
         }
-        .content {
-            padding: 20px 0;
+        
+        .logo-container {
+            position: relative;
+            z-index: 1;
+            margin-bottom: 20px;
         }
-        .event-details {
-            background: #f9f9f9;
-            padding: 15px;
+        
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: #EF4444;
             border-radius: 8px;
-            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
         }
-        .event-details p {
-            margin: 10px 0;
-        }
-        .event-details strong {
-            color: #4CAF50;
-        }
-        .attachment-notice {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        .logo-text {
+            font-size: 24px;
+            font-weight: bold;
             color: white;
-            padding: 25px;
+        }
+        
+        .logo-text .highlight {
+            color: #EF4444;
+        }
+        
+        .header-title {
+            position: relative;
+            z-index: 1;
+            color: white;
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .header-subtitle {
+            position: relative;
+            z-index: 1;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 15px;
+        }
+        
+        .email-body {
+            padding: 35px 30px;
+        }
+        
+        .greeting {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 20px;
+        }
+        
+        .message {
+            color: #475569;
+            font-size: 15px;
+            margin-bottom: 25px;
+            line-height: 1.7;
+        }
+        
+        .event-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            border: 2px solid #EF4444;
             border-radius: 12px;
+            padding: 24px;
+            margin: 25px 0;
+        }
+        
+        .event-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #EF4444;
+        }
+        
+        .event-detail {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        
+        .event-detail:last-child {
+            margin-bottom: 0;
+        }
+        
+        .event-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+        
+        .event-text {
+            color: #1e293b;
+            font-weight: 500;
+        }
+        
+        .attendee-box {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 2px solid #f59e0b;
+            border-radius: 10px;
+            padding: 16px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        
+        .attendee-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #92400e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+        
+        .attendee-name {
+            font-size: 18px;
+            font-weight: 700;
+            color: #78350f;
+        }
+        
+        .pdf-notice {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            border-left: 4px solid #3b82f6;
+            padding: 20px;
+            border-radius: 10px;
             margin: 25px 0;
             text-align: center;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-        .attachment-notice h2 {
-            margin-top: 0;
-            font-size: 24px;
+        
+        .pdf-icon {
+            font-size: 40px;
             margin-bottom: 10px;
         }
-        .attachment-notice p {
-            margin: 10px 0;
+        
+        .pdf-title {
             font-size: 16px;
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 8px;
         }
-        .pdf-icon {
-            font-size: 48px;
-            margin-bottom: 15px;
+        
+        .pdf-text {
+            font-size: 14px;
+            color: #1e40af;
         }
-        .instructions {
-            background: #e3f2fd;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            margin: 20px 0;
-            border-radius: 4px;
+        
+        .instructions-box {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 25px 0;
         }
-        .instructions h3 {
-            margin-top: 0;
-            color: #1976D2;
+        
+        .instructions-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 12px;
         }
-        .instructions ol {
-            margin: 10px 0;
-            padding-left: 20px;
+        
+        .instruction-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #475569;
         }
-        .instructions li {
-            margin: 8px 0;
+        
+        .instruction-number {
+            background: #EF4444;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            flex-shrink: 0;
         }
-        .footer {
+        
+        .divider {
+            height: 1px;
+            background: linear-gradient(to right, transparent, #e2e8f0, transparent);
+            margin: 25px 0;
+        }
+        
+        .email-footer {
+            background: #f8fafc;
+            padding: 25px 30px;
             text-align: center;
-            padding: 20px 0;
-            border-top: 1px solid #ddd;
-            color: #777;
-            font-size: 12px;
+            border-top: 1px solid #e2e8f0;
         }
-        .tip-box {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 20px 0;
-            text-align: center;
+        
+        .footer-text {
+            color: #64748b;
+            font-size: 13px;
+            line-height: 1.6;
         }
-        .tip-box strong {
-            color: #856404;
+        
+        @media only screen and (max-width: 600px) {
+            .email-wrapper {
+                border-radius: 0;
+            }
+            
+            .email-header,
+            .email-body,
+            .email-footer {
+                padding: 25px 20px;
+            }
+            
+            .header-title {
+                font-size: 24px;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🎟️ Your Event Ticket</h1>
+    <div class="email-wrapper">
+        <!-- Header -->
+        <div class="email-header">
+            <div class="logo-container">
+                <div class="logo">
+                    <div class="logo-icon">🎓</div>
+                    <span class="logo-text">Clu<span class="highlight">versity</span></span>
+                </div>
+            </div>
+            <h1 class="header-title">🎟️ Votre Ticket</h1>
+            <p class="header-subtitle">Tout est prêt pour votre événement !</p>
         </div>
-
-        <div class="content">
-            <p>Hello <strong>{{ $memberName }}</strong>,</p>
-            <p>Great news! You have been registered for the following event:</p>
-
-            <div class="event-details">
-                <p><strong>📅 Event:</strong> {{ $eventTitle }}</p>
-                <p><strong>🗓️ Date:</strong> {{ \Carbon\Carbon::parse($eventDate)->format('l, F j, Y - g:i A') }}</p>
-                <p><strong>📍 Location:</strong> {{ $eventLocation }}</p>
+        
+        <!-- Body -->
+        <div class="email-body">
+            <div class="greeting">
+                Bonjour {{ $memberName }},
+            </div>
+            
+            <p class="message">
+                Excellente nouvelle ! Vous êtes inscrit(e) à l'événement suivant. Votre ticket est joint à cet email.
+            </p>
+            
+            <!-- Event Card -->
+            <div class="event-card">
+                <div class="event-title">{{ $eventTitle }}</div>
+                
+                <div class="event-detail">
+                    <span class="event-icon">📅</span>
+                    <span class="event-text">{{ \Carbon\Carbon::parse($eventDate)->locale('fr')->isoFormat('dddd D MMMM YYYY [à] HH:mm') }}</span>
+                </div>
+                
+                <div class="event-detail">
+                    <span class="event-icon">📍</span>
+                    <span class="event-text">{{ $eventLocation }}</span>
+                </div>
+                
                 @if(!empty($eventDescription))
-                    <p><strong>ℹ️ Description:</strong> {{ $eventDescription }}</p>
+                <div class="event-detail">
+                    <span class="event-icon">ℹ️</span>
+                    <span class="event-text">{{ $eventDescription }}</span>
+                </div>
                 @endif
             </div>
-
-            <div class="attachment-notice">
+            
+            <!-- Attendee -->
+            <div class="attendee-box">
+                <div class="attendee-label">🎫 Titulaire</div>
+                <div class="attendee-name">{{ $memberName }}</div>
+            </div>
+            
+            <!-- PDF Notice -->
+            <div class="pdf-notice">
                 <div class="pdf-icon">📄</div>
-                <h2>Your Ticket is Attached!</h2>
-                <p style="font-size: 18px; margin: 15px 0;">
-                    <strong>Check your email attachments</strong>
-                </p>
-                <p style="font-size: 14px; opacity: 0.9;">
-                    Download the PDF ticket and save it on your device
-                </p>
+                <div class="pdf-title">Ticket joint à cet email</div>
+                <div class="pdf-text">Téléchargez le PDF et présentez le QR code à l'entrée</div>
             </div>
-
-            <div class="instructions">
-                <h3>📱 How to Use Your Ticket:</h3>
-                <ol>
-                    <li>Download the attached PDF file (<strong>event-ticket.pdf</strong>)</li>
-                    <li>Save it to your phone or print it out</li>
-                    <li>Present the QR code at the event entrance</li>
-                    <li>The staff will scan your QR code to verify your ticket</li>
-                </ol>
+            
+            <!-- Instructions -->
+            <div class="instructions-box">
+                <div class="instructions-title">📱 Comment utiliser votre ticket :</div>
+                
+                <div class="instruction-item">
+                    <span class="instruction-number">1</span>
+                    <span>Téléchargez le PDF joint (event-ticket.pdf)</span>
+                </div>
+                
+                <div class="instruction-item">
+                    <span class="instruction-number">2</span>
+                    <span>Enregistrez-le sur votre téléphone ou imprimez-le</span>
+                </div>
+                
+                <div class="instruction-item">
+                    <span class="instruction-number">3</span>
+                    <span>Présentez le QR code à l'entrée de l'événement</span>
+                </div>
+                
+                <div class="instruction-item">
+                    <span class="instruction-number">4</span>
+                    <span>Notre équipe scannera votre code pour valider l'accès</span>
+                </div>
             </div>
-
-            <div class="tip-box">
-                <p style="margin: 0;">
-                    <strong>💡 Pro Tip:</strong> Save the PDF to your phone's files or photos for easy access at the event entrance!
-                </p>
-            </div>
-
-            <p style="text-align: center; color: #666; margin-top: 30px;">
-                Looking forward to seeing you at the event! 🎉
+            
+            <div class="divider"></div>
+            
+            <p class="message" style="text-align: center; margin: 0;">
+                À très bientôt ! 🎉
             </p>
         </div>
-
-        <div class="footer">
-            <p>This is an automated email. Please do not reply.</p>
-            <p>&copy; {{ date('Y') }} Cluversity. All rights reserved.</p>
+        
+        <!-- Footer -->
+        <div class="email-footer">
+            <p class="footer-text">
+                Cet email a été envoyé automatiquement.<br>
+                © {{ date('Y') }} Cluversity - Université Sidi Mohamed Ben Abdellah - EST Fès
+            </p>
         </div>
     </div>
 </body>

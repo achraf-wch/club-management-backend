@@ -13,8 +13,19 @@ class ClubController extends Controller
 {
     private function addImageUrls($club)
     {
-        $club->logo_url = $club->logo ? url('storage/' . $club->logo) : null;
-        $club->cover_image_url = $club->cover_image ? url('storage/' . $club->cover_image) : null;
+        // Remove 'public/' prefix if it exists, since storage link already points to storage/app/public
+        $logoPath = $club->logo;
+        if ($logoPath && str_starts_with($logoPath, 'public/')) {
+            $logoPath = substr($logoPath, 7); // Remove 'public/' prefix
+        }
+        
+        $coverPath = $club->cover_image;
+        if ($coverPath && str_starts_with($coverPath, 'public/')) {
+            $coverPath = substr($coverPath, 7);
+        }
+        
+        $club->logo_url = $logoPath ? url('storage/' . $logoPath) : null;
+        $club->cover_image_url = $coverPath ? url('storage/' . $coverPath) : null;
         return $club;
     }
 
@@ -199,9 +210,6 @@ class ClubController extends Controller
         }
     }
 
-    /**
-     * FIXED: replaced DB::table('club_members') with Club_member model
-     */
     public function getMyClub(Request $request)
     {
         try {

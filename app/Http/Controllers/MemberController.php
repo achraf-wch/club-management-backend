@@ -104,8 +104,12 @@ class MemberController extends Controller
         }
     }
 
-    public function store(Request $request)
+public function store(Request $request)
 {
+    \Log::info('========================================');
+    \Log::info('STORE METHOD CALLED - Adding new member');
+    \Log::info('========================================');
+    
     $validator = Validator::make($request->all(), [
         'person_id' => 'required|exists:persons,id',
         'club_id' => 'required|exists:clubs,id',
@@ -115,6 +119,7 @@ class MemberController extends Controller
     ]);
 
     if ($validator->fails()) {
+        \Log::warning('Validation failed', ['errors' => $validator->errors()]);
         return response()->json([
             'message' => 'Erreur de validation',
             'errors' => $validator->errors()
@@ -122,6 +127,8 @@ class MemberController extends Controller
     }
 
     try {
+        \Log::info('Validation passed, checking for existing membership');
+        
         $exists = DB::table('club_members')
             ->where('person_id', $request->person_id)
             ->where('club_id', $request->club_id)
@@ -129,6 +136,7 @@ class MemberController extends Controller
             ->exists();
 
         if ($exists) {
+            \Log::info('Member already exists');
             return response()->json([
                 'message' => 'Cette personne est déjà membre de ce club'
             ], 409);
@@ -142,12 +150,15 @@ class MemberController extends Controller
                 ->exists();
 
             if ($hasPresident) {
+                \Log::info('Club already has a president');
                 return response()->json([
                     'message' => 'Ce club a déjà un président actif'
                 ], 409);
             }
         }
 
+        \Log::info('Creating membership record');
+        
         $membershipId = DB::table('club_members')->insertGetId([
             'person_id' => $request->person_id,
             'club_id' => $request->club_id,
@@ -159,36 +170,57 @@ class MemberController extends Controller
             'updated_at' => now(),
         ]);
 
+        \Log::info('Membership created', ['membership_id' => $membershipId]);
+        
         $this->updateClubMemberCounts($request->club_id);
         
-        // FIXED EMAIL SENDING SECTION
+        \Log::info('=== STARTING EMAIL PROCESS ===');
+        
         try {
             $person = Person::find($request->person_id);
             $club = Club::find($request->club_id);
             
-            \Log::info('Attempting to send welcome email', [
-                'to' => $person->email,
-                'club' => $club->name,
-                'role' => $request->role,
-                'mail_config' => [
-                    'mailer' => config('mail.default'),
-                    'host' => config('mail.mailers.smtp.host'),
-                    'port' => config('mail.mailers.smtp.port'),
-                    'from' => config('mail.from.address'),
-                ]
+            \Log::info('Person data', [
+                'found' => $person ? 'yes' : 'no',
+                'email' => $person ? $person->email : 'N/A',
+                'name' => $person ? ($person->first_name . ' ' . $person->last_name) : 'N/A'
             ]);
             
-            Mail::to($person->email)->send(new WelcomeEmail($person, $club, $request->role));
+            \Log::info('Club data', [
+                'found' => $club ? 'yes' : 'no',
+                'name' => $club ? $club->name : 'N/A'
+            ]);
             
-            \Log::info('Welcome email sent successfully', ['to' => $person->email]);
+            \Log::info('Email configuration', [
+                'mailer' => config('mail.default'),
+                'host' => config('mail.mailers.smtp.host'),
+                'port' => config('mail.mailers.smtp.port'),
+                'username' => config('mail.mailers.smtp.username'),
+                'from' => config('mail.from.address'),
+            ]);
+            
+            \Log::info('Creating WelcomeEmail mailable object');
+            
+            $mailable = new WelcomeEmail($person, $club, $request->role);
+            
+            \Log::info('Sending email via Mail::to()->send()');
+            
+            Mail::to($person->email)->send($mailable);
+            
+            \Log::info('=== EMAIL SENT SUCCESSFULLY ===', [
+                'to' => $person->email,
+                'club' => $club->name
+            ]);
             
         } catch (\Exception $e) {
-            \Log::error('Email sending failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            // Don't fail the entire request if email fails
+            \Log::error('=== EMAIL FAILED ===');
+            \Log::error('Error message: ' . $e->getMessage());
+            \Log::error('Error file: ' . $e->getFile());
+            \Log::error('Error line: ' . $e->getLine());
+            \Log::error('Stack trace: ' . $e->getTraceAsString());
         }
+        
+        \Log::info('=== EMAIL PROCESS COMPLETED ===');
 
         $membership = DB::table('club_members')
             ->join('persons', 'club_members.person_id', '=', 'persons.id')
@@ -207,15 +239,19 @@ class MemberController extends Controller
         $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
         $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
 
+        \Log::info('Returning success response');
+        
         return response()->json([
             'message' => 'Membre ajouté avec succès',
             'membership' => $membership
         ], 201);
+        
     } catch (\Exception $e) {
-        \Log::error('Error adding member', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
+        \Log::error('=== GENERAL ERROR IN STORE METHOD ===');
+        \Log::error('Error: ' . $e->getMessage());
+        \Log::error('File: ' . $e->getFile());
+        \Log::error('Line: ' . $e->getLine());
+        \Log::error('Trace: ' . $e->getTraceAsString());
         
         return response()->json([
             'message' => 'Erreur lors de l\'ajout du membre',

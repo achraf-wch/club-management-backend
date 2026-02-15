@@ -46,21 +46,22 @@ class MemberController extends Controller
                     'clubs.logo as club_logo'
                 );
 
-            // If the user is a president (not admin), only show their club's members
+            // If the user is NOT an admin, restrict to their club only
             if ($user->role === 'user') {
+                // ✅ FIX: Allow BOTH president AND board members
                 $membership = DB::table('club_members')
                     ->where('person_id', $user->id)
                     ->where('status', 'active')
-                    ->where('role', 'president')
+                    ->whereIn('role', ['president', 'board'])  // ✅ Changed from just 'president'
                     ->first();
                 
                 if (!$membership) {
                     return response()->json([
-                        'message' => 'Vous n\'êtes pas président d\'un club'
+                        'message' => 'Vous n\'êtes pas membre du bureau d\'un club'
                     ], 403);
                 }
                 
-                // Filter to only this president's club
+                // Filter to only this user's club
                 $query->where('club_members.club_id', $membership->club_id);
             }
 
@@ -105,161 +106,161 @@ class MemberController extends Controller
         }
     }
 
-public function store(Request $request)
-{
-    \Log::info('========================================');
-    \Log::info('STORE METHOD CALLED - Adding new member');
-    \Log::info('========================================');
-    
-    $validator = Validator::make($request->all(), [
-        'person_id' => 'required|exists:persons,id',
-        'club_id' => 'required|exists:clubs,id',
-        'role' => 'required|in:president,board,member',
-        'position' => 'nullable|string|max:100',
-        'status' => 'sometimes|in:active,inactive,pending',
-    ]);
-
-    if ($validator->fails()) {
-        \Log::warning('Validation failed', ['errors' => $validator->errors()]);
-        return response()->json([
-            'message' => 'Erreur de validation',
-            'errors' => $validator->errors()
-        ], 422);
-    }
-
-    try {
-        \Log::info('Validation passed, checking for existing membership');
+    public function store(Request $request)
+    {
+        \Log::info('========================================');
+        \Log::info('STORE METHOD CALLED - Adding new member');
+        \Log::info('========================================');
         
-        $exists = DB::table('club_members')
-            ->where('person_id', $request->person_id)
-            ->where('club_id', $request->club_id)
-            ->where('status', 'active')
-            ->exists();
+        $validator = Validator::make($request->all(), [
+            'person_id' => 'required|exists:persons,id',
+            'club_id' => 'required|exists:clubs,id',
+            'role' => 'required|in:president,board,member',
+            'position' => 'nullable|string|max:100',
+            'status' => 'sometimes|in:active,inactive,pending',
+        ]);
 
-        if ($exists) {
-            \Log::info('Member already exists');
+        if ($validator->fails()) {
+            \Log::warning('Validation failed', ['errors' => $validator->errors()]);
             return response()->json([
-                'message' => 'Cette personne est déjà membre de ce club'
-            ], 409);
+                'message' => 'Erreur de validation',
+                'errors' => $validator->errors()
+            ], 422);
         }
 
-        if ($request->role === 'president') {
-            $hasPresident = DB::table('club_members')
+        try {
+            \Log::info('Validation passed, checking for existing membership');
+            
+            $exists = DB::table('club_members')
+                ->where('person_id', $request->person_id)
                 ->where('club_id', $request->club_id)
-                ->where('role', 'president')
                 ->where('status', 'active')
                 ->exists();
 
-            if ($hasPresident) {
-                \Log::info('Club already has a president');
+            if ($exists) {
+                \Log::info('Member already exists');
                 return response()->json([
-                    'message' => 'Ce club a déjà un président actif'
+                    'message' => 'Cette personne est déjà membre de ce club'
                 ], 409);
             }
-        }
 
-        \Log::info('Creating membership record');
-        
-        $membershipId = DB::table('club_members')->insertGetId([
-            'person_id' => $request->person_id,
-            'club_id' => $request->club_id,
-            'role' => $request->role,
-            'position' => $request->position,
-            'status' => $request->status ?? 'active',
-            'joined_at' => now(),
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+            if ($request->role === 'president') {
+                $hasPresident = DB::table('club_members')
+                    ->where('club_id', $request->club_id)
+                    ->where('role', 'president')
+                    ->where('status', 'active')
+                    ->exists();
 
-        \Log::info('Membership created', ['membership_id' => $membershipId]);
-        
-        $this->updateClubMemberCounts($request->club_id);
-        
-        \Log::info('=== STARTING EMAIL PROCESS ===');
-        
-        try {
-            $person = Person::find($request->person_id);
-            $club = Club::find($request->club_id);
+                if ($hasPresident) {
+                    \Log::info('Club already has a president');
+                    return response()->json([
+                        'message' => 'Ce club a déjà un président actif'
+                    ], 409);
+                }
+            }
+
+            \Log::info('Creating membership record');
             
-            \Log::info('Person data', [
-                'found' => $person ? 'yes' : 'no',
-                'email' => $person ? $person->email : 'N/A',
-                'name' => $person ? ($person->first_name . ' ' . $person->last_name) : 'N/A'
+            $membershipId = DB::table('club_members')->insertGetId([
+                'person_id' => $request->person_id,
+                'club_id' => $request->club_id,
+                'role' => $request->role,
+                'position' => $request->position,
+                'status' => $request->status ?? 'active',
+                'joined_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
             ]);
+
+            \Log::info('Membership created', ['membership_id' => $membershipId]);
             
-            \Log::info('Club data', [
-                'found' => $club ? 'yes' : 'no',
-                'name' => $club ? $club->name : 'N/A'
-            ]);
+            $this->updateClubMemberCounts($request->club_id);
             
-            \Log::info('Email configuration', [
-                'mailer' => config('mail.default'),
-                'host' => config('mail.mailers.smtp.host'),
-                'port' => config('mail.mailers.smtp.port'),
-                'username' => config('mail.mailers.smtp.username'),
-                'from' => config('mail.from.address'),
-            ]);
+            \Log::info('=== STARTING EMAIL PROCESS ===');
             
-            \Log::info('Creating WelcomeEmail mailable object');
+            try {
+                $person = Person::find($request->person_id);
+                $club = Club::find($request->club_id);
+                
+                \Log::info('Person data', [
+                    'found' => $person ? 'yes' : 'no',
+                    'email' => $person ? $person->email : 'N/A',
+                    'name' => $person ? ($person->first_name . ' ' . $person->last_name) : 'N/A'
+                ]);
+                
+                \Log::info('Club data', [
+                    'found' => $club ? 'yes' : 'no',
+                    'name' => $club ? $club->name : 'N/A'
+                ]);
+                
+                \Log::info('Email configuration', [
+                    'mailer' => config('mail.default'),
+                    'host' => config('mail.mailers.smtp.host'),
+                    'port' => config('mail.mailers.smtp.port'),
+                    'username' => config('mail.mailers.smtp.username'),
+                    'from' => config('mail.from.address'),
+                ]);
+                
+                \Log::info('Creating WelcomeEmail mailable object');
+                
+                $mailable = new WelcomeEmail($person, $club, $request->role);
+                
+                \Log::info('Sending email via Mail::to()->send()');
+                
+                Mail::to($person->email)->send($mailable);
+                
+                \Log::info('=== EMAIL SENT SUCCESSFULLY ===', [
+                    'to' => $person->email,
+                    'club' => $club->name
+                ]);
+                
+            } catch (\Exception $e) {
+                \Log::error('=== EMAIL FAILED ===');
+                \Log::error('Error message: ' . $e->getMessage());
+                \Log::error('Error file: ' . $e->getFile());
+                \Log::error('Error line: ' . $e->getLine());
+                \Log::error('Stack trace: ' . $e->getTraceAsString());
+            }
             
-            $mailable = new WelcomeEmail($person, $club, $request->role);
+            \Log::info('=== EMAIL PROCESS COMPLETED ===');
+
+            $membership = DB::table('club_members')
+                ->join('persons', 'club_members.person_id', '=', 'persons.id')
+                ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+                ->where('club_members.id', $membershipId)
+                ->select(
+                    'club_members.*', 
+                    'persons.first_name', 
+                    'persons.last_name',
+                    'persons.avatar',
+                    'clubs.name as club_name',
+                    'clubs.logo as club_logo'
+                )
+                ->first();
             
-            \Log::info('Sending email via Mail::to()->send()');
+            $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
+            $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
+
+            \Log::info('Returning success response');
             
-            Mail::to($person->email)->send($mailable);
-            
-            \Log::info('=== EMAIL SENT SUCCESSFULLY ===', [
-                'to' => $person->email,
-                'club' => $club->name
-            ]);
+            return response()->json([
+                'message' => 'Membre ajouté avec succès',
+                'membership' => $membership
+            ], 201);
             
         } catch (\Exception $e) {
-            \Log::error('=== EMAIL FAILED ===');
-            \Log::error('Error message: ' . $e->getMessage());
-            \Log::error('Error file: ' . $e->getFile());
-            \Log::error('Error line: ' . $e->getLine());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::error('=== GENERAL ERROR IN STORE METHOD ===');
+            \Log::error('Error: ' . $e->getMessage());
+            \Log::error('File: ' . $e->getFile());
+            \Log::error('Line: ' . $e->getLine());
+            \Log::error('Trace: ' . $e->getTraceAsString());
+            
+            return response()->json([
+                'message' => 'Erreur lors de l\'ajout du membre',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        \Log::info('=== EMAIL PROCESS COMPLETED ===');
-
-        $membership = DB::table('club_members')
-            ->join('persons', 'club_members.person_id', '=', 'persons.id')
-            ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
-            ->where('club_members.id', $membershipId)
-            ->select(
-                'club_members.*', 
-                'persons.first_name', 
-                'persons.last_name',
-                'persons.avatar',
-                'clubs.name as club_name',
-                'clubs.logo as club_logo'
-            )
-            ->first();
-        
-        $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
-        $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
-
-        \Log::info('Returning success response');
-        
-        return response()->json([
-            'message' => 'Membre ajouté avec succès',
-            'membership' => $membership
-        ], 201);
-        
-    } catch (\Exception $e) {
-        \Log::error('=== GENERAL ERROR IN STORE METHOD ===');
-        \Log::error('Error: ' . $e->getMessage());
-        \Log::error('File: ' . $e->getFile());
-        \Log::error('Line: ' . $e->getLine());
-        \Log::error('Trace: ' . $e->getTraceAsString());
-        
-        return response()->json([
-            'message' => 'Erreur lors de l\'ajout du membre',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
     public function show($id)
     {

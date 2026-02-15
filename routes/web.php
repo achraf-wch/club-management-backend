@@ -40,25 +40,28 @@ Route::get('/force-clear', function() {
 });
 Route::get('/test-email-now', function() {
     try {
-        \Log::info('Starting email test...');
+        \Log::info('=== EMAIL TEST STARTING ===');
         
         $person = \App\Models\Person::first();
         $club = \App\Models\Club::first();
         
         if (!$person || !$club) {
-            return 'No person or club found';
+            return 'ERROR: No person or club in database';
         }
         
-        \Log::info('Sending to: ' . $person->email);
+        \Log::info('Found person: ' . $person->email);
+        \Log::info('Found club: ' . $club->name);
+        \Log::info('Attempting to send email...');
         
         Mail::to($person->email)->send(new \App\Mail\WelcomeEmail($person, $club, 'member'));
         
-        \Log::info('Email sent successfully!');
+        \Log::info('=== EMAIL SENT SUCCESSFULLY ===');
         
-        return 'SUCCESS! Check logs and email inbox.';
+        return 'SUCCESS! Email sent to ' . $person->email . '. Check your inbox and Railway logs!';
         
     } catch (\Exception $e) {
-        \Log::error('Email failed: ' . $e->getMessage());
+        \Log::error('=== EMAIL FAILED ===');
+        \Log::error('Error: ' . $e->getMessage());
         return 'FAILED: ' . $e->getMessage();
     }
 });

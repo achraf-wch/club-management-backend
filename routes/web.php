@@ -254,3 +254,15 @@ Route::get('/test-member-email', function() {
         return 'FAILED: ' . $e->getMessage();
     }
 });
+// In routes/web.php
+Route::get('/check-mail-config', function() {
+    return response()->json([
+        'mailer' => config('mail.default'),
+        'host' => config('mail.mailers.smtp.host'),
+        'port' => config('mail.mailers.smtp.port'),
+        'username' => config('mail.mailers.smtp.username'),
+        'encryption' => config('mail.mailers.smtp.encryption'),
+        'from_address' => config('mail.from.address'),
+        'from_name' => config('mail.from.name'),
+    ]);
+});

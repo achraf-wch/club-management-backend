@@ -80,9 +80,15 @@ class AuthController extends Controller
             $clubId = null;
             
             if ($person->role === 'user') {
+                // PostgreSQL and MySQL compatible ordering
                 $membership = Club_member::where('person_id', $person->id)
                     ->where('status', 'active')
-                    ->orderByRaw("FIELD(role, 'president', 'board', 'member')")
+                    ->orderByRaw("CASE 
+                        WHEN role = 'president' THEN 1 
+                        WHEN role = 'board' THEN 2 
+                        WHEN role = 'member' THEN 3 
+                        ELSE 4 
+                    END")
                     ->first();
                     
                 if ($membership) {
@@ -146,9 +152,15 @@ class AuthController extends Controller
             $clubId = null;
             
             if ($person->role === 'user') {
+                // PostgreSQL and MySQL compatible ordering
                 $membership = Club_member::where('person_id', $person->id)
                     ->where('status', 'active')
-                    ->orderByRaw("FIELD(role, 'president', 'board', 'member')")
+                    ->orderByRaw("CASE 
+                        WHEN role = 'president' THEN 1 
+                        WHEN role = 'board' THEN 2 
+                        WHEN role = 'member' THEN 3 
+                        ELSE 4 
+                    END")
                     ->first();
                     
                 if ($membership) {

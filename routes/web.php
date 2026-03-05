@@ -17,17 +17,16 @@ use App\Mail\TicketMail;
 use App\Models\Club_member;
 use Illuminate\Support\Facades\Log;
 
-
 /*
 |--------------------------------------------------------------------------
 | WEB ROUTES - All API routes with session support
 |--------------------------------------------------------------------------
 */
+
 Route::get('/force-clear', function() {
     \Artisan::call('config:clear');
     \Artisan::call('cache:clear');
     \Artisan::call('config:cache');
-    
     return response()->json([
         'message' => 'Config cleared and cached',
         'new_config' => [
@@ -38,110 +37,74 @@ Route::get('/force-clear', function() {
         ]
     ]);
 });
+
 Route::get('/test-email-now', function() {
     try {
         \Log::info('=== EMAIL TEST STARTING ===');
-        
         $person = \App\Models\Person::first();
         $club = \App\Models\Club::first();
-        
-        if (!$person || !$club) {
-            return 'ERROR: No person or club in database';
-        }
-        
-        \Log::info('Found person: ' . $person->email);
-        \Log::info('Found club: ' . $club->name);
-        \Log::info('Attempting to send email...');
-        
+        if (!$person || !$club) return 'ERROR: No person or club in database';
         Mail::to($person->email)->send(new \App\Mail\WelcomeEmail($person, $club, 'member'));
-        
         \Log::info('=== EMAIL SENT SUCCESSFULLY ===');
-        
-        return 'SUCCESS! Email sent to ' . $person->email . '. Check your inbox and Railway logs!';
-        
+        return 'SUCCESS! Email sent to ' . $person->email;
     } catch (\Exception $e) {
-        \Log::error('=== EMAIL FAILED ===');
-        \Log::error('Error: ' . $e->getMessage());
+        \Log::error('=== EMAIL FAILED: ' . $e->getMessage());
         return 'FAILED: ' . $e->getMessage();
     }
 });
-// Auth routes (public - no auth required)
+
+// ============================================
+// PUBLIC AUTH ROUTES (no auth required)
+// ============================================
 Route::post('/api/login', [AuthController::class, 'login']);
 Route::post('/api/register', [AuthController::class, 'register']);
 
-// Google OAuth routes (public) - IMPORTANT: These need web middleware for sessions
+// Google OAuth routes (need web middleware for sessions)
 Route::prefix('/api/auth/google')->middleware('web')->group(function () {
-    // For login flow
     Route::get('/', [GoogleAuthController::class, 'loginRedirect'])->name('google.login');
     Route::get('/callback', [GoogleAuthController::class, 'loginCallback'])->name('google.callback');
-    
-    // For linking existing account
     Route::get('/link', [GoogleAuthController::class, 'linkRedirect'])->name('google.link');
     Route::get('/link/callback', [GoogleAuthController::class, 'linkCallback'])->name('google.link.callback');
 });
 
-// Session verification route (public - checks session internally)
-// IMPORTANT: This route should NOT have auth middleware!
+// Session verification (public - checks session internally)
 Route::get('/api/verify-session', function (Request $request) {
     try {
         Log::info('=== VERIFY SESSION START ===', [
             'session_id' => session()->getId(),
             'auth_check' => Auth::check(),
-            'auth_id' => Auth::id(),
-            'cookies' => $request->cookies->all(),
-            'session_data' => $request->session()->all()
         ]);
 
-        // Check if user is authenticated
         if (!Auth::check()) {
-            Log::warning('Verify session failed - not authenticated');
             return response()->json(['message' => 'Non authentifié'], 401);
         }
 
         $person = Auth::user();
-        
-        Log::info('User found in session', [
-            'person_id' => $person->id,
-            'email' => $person->email,
-            'role' => $person->role
-        ]);
-        
-        // Check if account is active
+
         if (!$person->is_active) {
-            Log::warning('Account is not active', ['person_id' => $person->id]);
             Auth::logout();
             return response()->json(['message' => 'Compte désactivé'], 401);
         }
 
-        // Get club role if applicable
         $clubRole = null;
         $clubId = null;
-        
+
         if ($person->role === 'user') {
             $membership = Club_member::where('person_id', $person->id)
                 ->where('status', 'active')
-                ->orderByRaw("FIELD(role, 'president', 'board', 'member')")
+                ->orderByRaw("CASE 
+                    WHEN role = 'president' THEN 1 
+                    WHEN role = 'board' THEN 2 
+                    WHEN role = 'member' THEN 3 
+                    ELSE 4 
+                END")
                 ->first();
-                
+
             if ($membership) {
                 $clubRole = $membership->role;
                 $clubId = $membership->club_id;
             }
-            
-            Log::info('Club membership found', [
-                'club_role' => $clubRole,
-                'club_id' => $clubId
-            ]);
         }
-
-        Log::info('Session verified successfully', [
-            'person_id' => $person->id,
-            'role' => $person->role,
-            'club_role' => $clubRole,
-            'club_id' => $clubId
-        ]);
-        
-        Log::info('=== VERIFY SESSION END - SUCCESS ===');
 
         return response()->json([
             'user' => [
@@ -150,7 +113,7 @@ Route::get('/api/verify-session', function (Request $request) {
                 'last_name' => $person->last_name,
                 'email' => $person->email,
                 'avatar' => $person->avatar,
-                'avatar_url' => $person->avatar ? asset('storage/' . $person->avatar) : null,
+                'avatar_url' => $person->avatar ? url('storage/' . $person->avatar) : null,
                 'member_code' => $person->member_code,
                 'club_id' => $clubId,
             ],
@@ -160,15 +123,14 @@ Route::get('/api/verify-session', function (Request $request) {
         ], 200);
 
     } catch (\Exception $e) {
-        Log::error('Session verification error', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ]);
+        Log::error('Session verification error: ' . $e->getMessage());
         return response()->json(['message' => 'Erreur serveur'], 500);
     }
-})->middleware('web'); // IMPORTANT: Use web middleware for session access
+})->middleware('web');
 
-// Public routes (no auth required)
+// ============================================
+// PUBLIC ROUTES (no auth required)
+// ============================================
 Route::post('/api/public/persons', [PersonController::class, 'store']);
 Route::post('/api/public/members', [MemberController::class, 'store']);
 
@@ -190,17 +152,20 @@ Route::get('/api/clubs/{clubId}/stats', [MemberController::class, 'getClubStats'
 Route::get('/api/tickets/qr/{qrCode}', [TicketController::class, 'showByQRCode']);
 
 // ============================================
-// PROTECTED ROUTES - require auth:web
+// PROTECTED ROUTES — auth:web (session cookie)
 // ============================================
 Route::middleware(['auth:web'])->prefix('/api')->group(function () {
-    
+
     // Auth
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    // ✅ Profile — utilise les cookies de session
     Route::get('/profile', [AuthController::class, 'profile']);
+    Route::post('/profile', [AuthController::class, 'updateProfile']);
     Route::put('/profile', [AuthController::class, 'updateProfile']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
 
-    // Google Account Management (protected routes)
+    // Google Account Management
     Route::get('/google/status', [GoogleAuthController::class, 'checkGoogleStatus']);
     Route::post('/google/unlink', [GoogleAuthController::class, 'unlinkGoogle']);
 
@@ -234,13 +199,13 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     Route::post('/persons/{id}/reactivate', [PersonController::class, 'reactivate']);
     Route::put('/persons/{id}/password', [PersonController::class, 'updatePassword']);
     Route::get('/persons/search/query', [PersonController::class, 'search']);
+    Route::post('/me/avatar', [PersonController::class, 'updateAvatar']);
 
     // Tickets
-    
     Route::get('/tickets', [TicketController::class, 'index']);
     Route::post('/tickets', [TicketController::class, 'store']);
     Route::get('/tickets/{id}', [TicketController::class, 'show']);
-    Route::post('/tickets/scan-qr', [TicketController::class, 'scanByQRData']); // <-- ADD THIS LINE
+    Route::post('/tickets/scan-qr', [TicketController::class, 'scanByQRData']);
     Route::post('/tickets/{id}/scan', [TicketController::class, 'scan']);
     Route::post('/tickets/{id}/cancel', [TicketController::class, 'cancel']);
     Route::get('/events/{eventId}/tickets/stats', [TicketController::class, 'getEventStats']);
@@ -255,47 +220,27 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     Route::get('/clubs/{clubId}/requests/stats', [RequestController::class, 'getClubStats']);
 
     // Notifications
-    Route::get('/notifications', [NotificationController::class, 'index']);
-    Route::post('/notifications', [NotificationController::class, 'store']);
-    Route::post('/notifications/bulk', [NotificationController::class, 'bulkCreate']);
-    Route::get('/notifications/{id}', [NotificationController::class, 'show']);
-    Route::delete('/notifications/{id}', [NotificationController::class, 'destroy']);
-    Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead']);
-    Route::post('/persons/{personId}/notifications/read-all', [NotificationController::class, 'markAllAsRead']);
-    Route::delete('/persons/{personId}/notifications/read', [NotificationController::class, 'deleteAllRead']);
-    Route::get('/persons/{personId}/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
-    Route::get('/persons/{personId}/notifications/stats', [NotificationController::class, 'getStats']);
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'getUnreadCount']);
+        Route::put('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::put('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
+    });
 });
+
 Route::get('/test-member-email', function() {
-    \Log::info('=== DIRECT EMAIL TEST START ===');
-    
     $person = \App\Models\Person::first();
     $club = \App\Models\Club::first();
-    
-    if (!$person || !$club) {
-        return 'ERROR: No person or club found in database';
-    }
-    
-    \Log::info('Found person and club', [
-        'person' => $person->email,
-        'club' => $club->name
-    ]);
-    
+    if (!$person || !$club) return 'ERROR: No person or club found in database';
     try {
-        \Log::info('Attempting to send email...');
         Mail::to($person->email)->send(new \App\Mail\WelcomeEmail($person, $club, 'member'));
-        \Log::info('=== EMAIL SENT SUCCESSFULLY ===');
-        return 'SUCCESS! Email sent to ' . $person->email . ' - Check your inbox!';
+        return 'SUCCESS! Email sent to ' . $person->email;
     } catch (\Exception $e) {
-        \Log::error('=== EMAIL FAILED ===', [
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]);
         return 'FAILED: ' . $e->getMessage();
     }
 });
-// In routes/web.php
+
 Route::get('/check-mail-config', function() {
     return response()->json([
         'mailer' => config('mail.default'),

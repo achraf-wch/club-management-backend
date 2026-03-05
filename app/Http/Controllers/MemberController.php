@@ -2,18 +2,167 @@
 
 namespace App\Http\Controllers;
 
-use App\Mail\WelcomeEmail;
 use App\Models\Person;
 use App\Models\Club;
 use App\Models\Club_member;
+use App\Models\Notification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
 class MemberController extends Controller
 {
+    // ============ FONCTIONS DE NOTIFICATION ============
+    
+    private function createNotification($personId, $type, $title, $message, $dashboardLink = null, $data = null)
+    {
+        try {
+            return Notification::create([
+                'person_id' => $personId,
+                'type' => $type,
+                'title' => $title,
+                'message' => $message,
+                'dashboard_link' => $dashboardLink,
+                'data' => $data,
+                'read' => false,
+                'email_sent' => false,
+                'created_at' => now()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error creating notification: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function createWelcomeNotification($person, $club, $role)
+    {
+        $roleNames = [
+            'president' => 'Président',
+            'board' => 'Membre du Bureau',
+            'member' => 'Membre'
+        ];
+
+        $roleName = $roleNames[$role] ?? 'Membre';
+
+        $title = "🎉 Bienvenue au club {$club->name} !";
+        $message = "Vous êtes maintenant inscrit en tant que **{$roleName}** au club **{$club->name}**. Nous sommes ravis de vous compter parmi nous !";
+       $dashboardLink = "/Member/Dashboard";
+        
+        $data = [
+            'club_id' => $club->id,
+            'club_name' => $club->name,
+            'role' => $role,
+            'role_name' => $roleName,
+            'joined_at' => now()->toDateTimeString()
+        ];
+
+        return $this->createNotification(
+            $person->id,
+            'welcome',
+            $title,
+            $message,
+            $dashboardLink,
+            $data
+        );
+    }
+
+    private function createCustomWelcomeNotification($person, $club = null)
+    {
+        $title = "👋 Bienvenue dans votre espace membre !";
+        $message = "Bienvenue **{$person->first_name}** ! Vous faites maintenant partie de la communauté **CluVersity**. Explorez votre dashboard pour découvrir tous les événements à venir et gérer votre profil.";
+        $dashboardLink = "/Member/Dashboard";
+        
+        $data = [
+            'user_id' => $person->id,
+            'user_name' => $person->first_name . ' ' . $person->last_name,
+            'welcome_message' => 'Nous sommes ravis de vous accueillir !'
+        ];
+
+        return $this->createNotification(
+            $person->id,
+            'welcome_dashboard',
+            $title,
+            $message,
+            $dashboardLink,
+            $data
+        );
+    }
+
+    private function createMembershipAddedNotification($person, $club, $role)
+    {
+        $roleNames = [
+            'president' => 'Président',
+            'board' => 'Membre du Bureau',
+            'member' => 'Membre'
+        ];
+
+        $roleName = $roleNames[$role] ?? 'Membre';
+
+        $title = "➕ Nouvelle adhésion au club {$club->name}";
+        $message = "Vous avez été ajouté en tant que **{$roleName}** au club **{$club->name}**.";
+       $dashboardLink = "/Member/Dashboard";
+        
+        $data = [
+            'club_id' => $club->id,
+            'club_name' => $club->name,
+            'role' => $role,
+            'role_name' => $roleName,
+            'joined_at' => now()->toDateTimeString()
+        ];
+
+        return $this->createNotification(
+            $person->id,
+            'membership_added',
+            $title,
+            $message,
+            $dashboardLink,
+            $data
+        );
+    }
+
+    private function createRoleChangedNotification($person, $club, $newRole, $oldRole = null)
+    {
+        $roleNames = [
+            'president' => 'Président',
+            'board' => 'Membre du Bureau',
+            'member' => 'Membre'
+        ];
+
+        $newRoleName = $roleNames[$newRole] ?? $newRole;
+        
+        $title = "🔄 Votre rôle a changé dans {$club->name}";
+        
+        if ($oldRole) {
+            $oldRoleName = $roleNames[$oldRole] ?? $oldRole;
+            $message = "Votre rôle est passé de **{$oldRoleName}** à **{$newRoleName}** au club **{$club->name}**.";
+        } else {
+            $message = "Vous êtes maintenant **{$newRoleName}** au club **{$club->name}**.";
+        }
+        
+        $dashboardLink = "/member-dashboard";
+        
+        $data = [
+            'club_id' => $club->id,
+            'club_name' => $club->name,
+            'old_role' => $oldRole,
+            'new_role' => $newRole,
+            'new_role_name' => $newRoleName,
+            'updated_at' => now()->toDateTimeString()
+        ];
+
+        return $this->createNotification(
+            $person->id,
+            'role_changed',
+            $title,
+            $message,
+            $dashboardLink,
+            $data
+        );
+    }
+
+    // ============ FIN FONCTIONS DE NOTIFICATION ============
+
     public function index(Request $request)
     {
         try {
@@ -46,13 +195,11 @@ class MemberController extends Controller
                     'clubs.logo as club_logo'
                 );
 
-            // If the user is NOT an admin, restrict to their club only
             if ($user->role === 'user') {
-                // ✅ FIX: Allow BOTH president AND board members
                 $membership = DB::table('club_members')
                     ->where('person_id', $user->id)
                     ->where('status', 'active')
-                    ->whereIn('role', ['president', 'board'])  // ✅ Changed from just 'president'
+                    ->whereIn('role', ['president', 'board'])
                     ->first();
                 
                 if (!$membership) {
@@ -61,11 +208,9 @@ class MemberController extends Controller
                     ], 403);
                 }
                 
-                // Filter to only this user's club
                 $query->where('club_members.club_id', $membership->club_id);
             }
 
-            // Additional filters from query parameters
             if ($request->has('club_id')) {
                 $query->where('club_members.club_id', $request->club_id);
             }
@@ -90,7 +235,7 @@ class MemberController extends Controller
                 return $member;
             });
 
-            \Log::info('Members fetched', [
+            Log::info('Members fetched', [
                 'user_id' => $user->id,
                 'role' => $user->role,
                 'count' => $members->count()
@@ -98,7 +243,7 @@ class MemberController extends Controller
 
             return response()->json($members, 200);
         } catch (\Exception $e) {
-            \Log::error('Error fetching members: ' . $e->getMessage());
+            Log::error('Error fetching members: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Erreur lors de la récupération des membres',
                 'error' => $e->getMessage()
@@ -108,9 +253,7 @@ class MemberController extends Controller
 
     public function store(Request $request)
     {
-        \Log::info('========================================');
-        \Log::info('STORE METHOD CALLED - Adding new member');
-        \Log::info('========================================');
+        Log::info('Adding new member');
         
         $validator = Validator::make($request->all(), [
             'person_id' => 'required|exists:persons,id',
@@ -121,7 +264,6 @@ class MemberController extends Controller
         ]);
 
         if ($validator->fails()) {
-            \Log::warning('Validation failed', ['errors' => $validator->errors()]);
             return response()->json([
                 'message' => 'Erreur de validation',
                 'errors' => $validator->errors()
@@ -129,8 +271,6 @@ class MemberController extends Controller
         }
 
         try {
-            \Log::info('Validation passed, checking for existing membership');
-            
             $exists = DB::table('club_members')
                 ->where('person_id', $request->person_id)
                 ->where('club_id', $request->club_id)
@@ -138,7 +278,6 @@ class MemberController extends Controller
                 ->exists();
 
             if ($exists) {
-                \Log::info('Member already exists');
                 return response()->json([
                     'message' => 'Cette personne est déjà membre de ce club'
                 ], 409);
@@ -152,15 +291,12 @@ class MemberController extends Controller
                     ->exists();
 
                 if ($hasPresident) {
-                    \Log::info('Club already has a president');
                     return response()->json([
                         'message' => 'Ce club a déjà un président actif'
                     ], 409);
                 }
             }
 
-            \Log::info('Creating membership record');
-            
             $membershipId = DB::table('club_members')->insertGetId([
                 'person_id' => $request->person_id,
                 'club_id' => $request->club_id,
@@ -172,57 +308,21 @@ class MemberController extends Controller
                 'updated_at' => now(),
             ]);
 
-            \Log::info('Membership created', ['membership_id' => $membershipId]);
-            
             $this->updateClubMemberCounts($request->club_id);
-            
-            \Log::info('=== STARTING EMAIL PROCESS ===');
             
             try {
                 $person = Person::find($request->person_id);
                 $club = Club::find($request->club_id);
                 
-                \Log::info('Person data', [
-                    'found' => $person ? 'yes' : 'no',
-                    'email' => $person ? $person->email : 'N/A',
-                    'name' => $person ? ($person->first_name . ' ' . $person->last_name) : 'N/A'
-                ]);
+                $this->createWelcomeNotification($person, $club, $request->role);
+                $this->createCustomWelcomeNotification($person, $club);
+                $this->createMembershipAddedNotification($person, $club, $request->role);
                 
-                \Log::info('Club data', [
-                    'found' => $club ? 'yes' : 'no',
-                    'name' => $club ? $club->name : 'N/A'
-                ]);
-                
-                \Log::info('Email configuration', [
-                    'mailer' => config('mail.default'),
-                    'host' => config('mail.mailers.smtp.host'),
-                    'port' => config('mail.mailers.smtp.port'),
-                    'username' => config('mail.mailers.smtp.username'),
-                    'from' => config('mail.from.address'),
-                ]);
-                
-                \Log::info('Creating WelcomeEmail mailable object');
-                
-                $mailable = new WelcomeEmail($person, $club, $request->role);
-                
-                \Log::info('Sending email via Mail::to()->send()');
-                
-                Mail::to($person->email)->send($mailable);
-                
-                \Log::info('=== EMAIL SENT SUCCESSFULLY ===', [
-                    'to' => $person->email,
-                    'club' => $club->name
-                ]);
+                Log::info('Notifications created for user: ' . $person->id);
                 
             } catch (\Exception $e) {
-                \Log::error('=== EMAIL FAILED ===');
-                \Log::error('Error message: ' . $e->getMessage());
-                \Log::error('Error file: ' . $e->getFile());
-                \Log::error('Error line: ' . $e->getLine());
-                \Log::error('Stack trace: ' . $e->getTraceAsString());
+                Log::error('Failed to create notifications: ' . $e->getMessage());
             }
-            
-            \Log::info('=== EMAIL PROCESS COMPLETED ===');
 
             $membership = DB::table('club_members')
                 ->join('persons', 'club_members.person_id', '=', 'persons.id')
@@ -241,20 +341,13 @@ class MemberController extends Controller
             $membership->avatar_url = $membership->avatar ? url('storage/' . $membership->avatar) : null;
             $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
 
-            \Log::info('Returning success response');
-            
             return response()->json([
                 'message' => 'Membre ajouté avec succès',
                 'membership' => $membership
             ], 201);
             
         } catch (\Exception $e) {
-            \Log::error('=== GENERAL ERROR IN STORE METHOD ===');
-            \Log::error('Error: ' . $e->getMessage());
-            \Log::error('File: ' . $e->getFile());
-            \Log::error('Line: ' . $e->getLine());
-            \Log::error('Trace: ' . $e->getTraceAsString());
-            
+            Log::error('Error adding member: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Erreur lors de l\'ajout du membre',
                 'error' => $e->getMessage()
@@ -336,6 +429,8 @@ class MemberController extends Controller
                 }
             }
 
+            $oldRole = $membership->role;
+            
             DB::table('club_members')
                 ->where('id', $id)
                 ->update(array_merge(
@@ -344,6 +439,16 @@ class MemberController extends Controller
                 ));
 
             $this->updateClubMemberCounts($membership->club_id);
+
+            if ($request->has('role') && $request->role !== $oldRole) {
+                try {
+                    $person = Person::find($membership->person_id);
+                    $club = Club::find($membership->club_id);
+                    $this->createRoleChangedNotification($person, $club, $request->role, $oldRole);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create role change notification: ' . $e->getMessage());
+                }
+            }
 
             $updated = DB::table('club_members')
                 ->join('persons', 'club_members.person_id', '=', 'persons.id')
@@ -549,7 +654,7 @@ class MemberController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            \Log::error('Error fetching membership: ' . $e->getMessage());
+            Log::error('Error fetching membership: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Erreur lors de la récupération de l\'adhésion',
                 'error' => $e->getMessage()

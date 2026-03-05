@@ -152,4 +152,49 @@ class PersonController extends Controller
             return response()->json(['message' => 'Erreur'], 500);
         }
     }
+    public function updateAvatar(Request $request)
+    {
+        try {
+            $person = auth()->user();
+
+            if (!$person) {
+                return response()->json(['message' => 'Non authentifié'], 401);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'avatar' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'message' => 'Fichier invalide',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Supprimer l'ancien avatar
+            if ($person->avatar && Storage::disk('public')->exists($person->avatar)) {
+                Storage::disk('public')->delete($person->avatar);
+            }
+
+            // Stocker le nouvel avatar
+            $path = $request->file('avatar')->store('persons/avatars', 'public');
+
+            // Mettre à jour en base
+            $person->avatar = $path;
+            $person->save();
+
+            return response()->json([
+                'message' => 'Photo mise à jour avec succès',
+                'avatar_url' => url('storage/' . $path),
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Error updating avatar: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erreur lors de la mise à jour de la photo',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

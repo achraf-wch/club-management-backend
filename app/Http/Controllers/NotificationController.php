@@ -4,55 +4,57 @@ namespace App\Http\Controllers;
 
 use App\Models\Notification;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 
 class NotificationController extends Controller
 {
-    /**
-     * Get all notifications for a person using JOIN
-     */
     public function index(Request $request)
     {
         try {
-            $query = DB::table('notifications')
-                ->join('persons', 'notifications.person_id', '=', 'persons.id')
-                ->select(
-                    'notifications.*',
-                    'persons.first_name',
-                    'persons.last_name',
-                    'persons.email'
-                );
-
-            // Filter by person
-            if ($request->has('person_id')) {
-                $query->where('notifications.person_id', $request->person_id);
+            $user = $request->user();
+            
+            if (!$user) {
+                return response()->json(['message' => 'Non authentifié'], 401);
             }
 
-            // Filter by type
-            if ($request->has('type')) {
-                $query->where('notifications.type', $request->type);
-            }
+            $limit = $request->get('limit', 50);
+            $page = $request->get('page', 1);
 
-            // Filter by read status
-            if ($request->has('read')) {
-                $query->where('notifications.read', $request->boolean('read'));
-            }
+            $notifications = Notification::where('person_id', $user->id)
+                ->orderBy('created_at', 'desc')
+                ->paginate($limit, ['*'], 'page', $page);
 
-            // Order by
-            $orderBy = $request->get('order_by', 'created_at');
-            $orderDir = $request->get('order_dir', 'desc');
-            $query->orderBy('notifications.' . $orderBy, $orderDir);
+            $unreadCount = Notification::where('person_id', $user->id)
+                ->where('read', false)
+                ->count();
 
-            $notifications = $query->get()->map(function($notification) {
-                if ($notification->data) {
-                    $notification->data = json_decode($notification->data, true);
-                }
-                return $notification;
+            $formattedNotifications = collect($notifications->items())->map(function($notification) {
+                return [
+                    'id' => $notification->id,
+                    'type' => $notification->type,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'dashboard_link' => $notification->dashboard_link,
+                    'data' => $notification->data,
+                    'read' => $notification->read,
+                    'read_at' => $notification->read_at,
+                    'time_ago' => $notification->time_ago,
+                    'created_at' => $notification->created_at,
+                ];
             });
 
-            return response()->json($notifications, 200);
+            return response()->json([
+                'notifications' => $formattedNotifications,
+                'unread_count' => $unreadCount,
+                'pagination' => [
+                    'current_page' => $notifications->currentPage(),
+                    'last_page' => $notifications->lastPage(),
+                    'per_page' => $notifications->perPage(),
+                    'total' => $notifications->total()
+                ]
+            ], 200);
+
         } catch (\Exception $e) {
+            \Log::error('Error fetching notifications: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Erreur lors de la récupération des notifications',
                 'error' => $e->getMessage()
@@ -60,290 +62,106 @@ class NotificationController extends Controller
         }
     }
 
-    /**
-     * Create a new notification
-     */
-    public function store(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'person_id' => 'required|exists:persons,id',
-            'type' => 'required|in:info,success,warning,error,event,request,ticket',
-            'title' => 'required|string|max:255',
-            'message' => 'required|string',
-            'dashboard_link' => 'nullable|string|max:500',
-            'data' => 'nullable|array',
-            'email_sent' => 'boolean',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Erreur de validation',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            $notificationId = DB::table('notifications')->insertGetId([
-                'person_id' => $request->person_id,
-                'type' => $request->type,
-                'title' => $request->title,
-                'message' => $request->message,
-                'dashboard_link' => $request->dashboard_link,
-                'data' => $request->data ? json_encode($request->data) : null,
-                'read' => false,
-                'email_sent' => $request->email_sent ?? false,
-                'created_at' => now(),
-            ]);
-
-            $notification = DB::table('notifications')
-                ->where('id', $notificationId)
-                ->first();
-
-            if ($notification->data) {
-                $notification->data = json_decode($notification->data, true);
-            }
-
-            return response()->json([
-                'message' => 'Notification créée avec succès',
-                'notification' => $notification
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la création de la notification',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get a specific notification
-     */
-    public function show($id)
+    public function markAsRead($id, Request $request)
     {
         try {
-            $notification = DB::table('notifications')
-                ->join('persons', 'notifications.person_id', '=', 'persons.id')
-                ->where('notifications.id', $id)
-                ->select(
-                    'notifications.*',
-                    'persons.first_name',
-                    'persons.last_name',
-                    'persons.email'
-                )
+            $user = $request->user();
+            
+            $notification = Notification::where('id', $id)
+                ->where('person_id', $user->id)
                 ->first();
 
             if (!$notification) {
                 return response()->json(['message' => 'Notification non trouvée'], 404);
             }
 
-            if ($notification->data) {
-                $notification->data = json_decode($notification->data, true);
-            }
+            $notification->markAsRead();
 
-            return response()->json($notification, 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la récupération',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Mark notification as read
-     */
-    public function markAsRead($id)
-    {
-        try {
-            $exists = DB::table('notifications')->where('id', $id)->exists();
-            if (!$exists) {
-                return response()->json(['message' => 'Notification non trouvée'], 404);
-            }
-
-            DB::table('notifications')
-                ->where('id', $id)
-                ->update([
-                    'read' => true,
-                    'read_at' => now(),
-                ]);
-
-            $notification = DB::table('notifications')->where('id', $id)->first();
-
-            return response()->json([
-                'message' => 'Notification marquée comme lue',
-                'notification' => $notification
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la mise à jour',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Mark all notifications as read for a person
-     */
-    public function markAllAsRead($personId)
-    {
-        try {
-            DB::table('notifications')
-                ->where('person_id', $personId)
-                ->where('read', false)
-                ->update([
-                    'read' => true,
-                    'read_at' => now(),
-                ]);
-
-            return response()->json([
-                'message' => 'Toutes les notifications ont été marquées comme lues'
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la mise à jour',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Delete a notification
-     */
-    public function destroy($id)
-    {
-        try {
-            $exists = DB::table('notifications')->where('id', $id)->exists();
-            if (!$exists) {
-                return response()->json(['message' => 'Notification non trouvée'], 404);
-            }
-
-            DB::table('notifications')->where('id', $id)->delete();
-
-            return response()->json(['message' => 'Notification supprimée avec succès'], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la suppression',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Delete all read notifications for a person
-     */
-    public function deleteAllRead($personId)
-    {
-        try {
-            DB::table('notifications')
-                ->where('person_id', $personId)
-                ->where('read', true)
-                ->delete();
-
-            return response()->json([
-                'message' => 'Toutes les notifications lues ont été supprimées'
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Erreur lors de la suppression',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get unread count for a person
-     */
-    public function getUnreadCount($personId)
-    {
-        try {
-            $count = DB::table('notifications')
-                ->where('person_id', $personId)
+            $unreadCount = Notification::where('person_id', $user->id)
                 ->where('read', false)
                 ->count();
 
-            return response()->json(['unread_count' => $count], 200);
-        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Erreur lors du comptage',
+                'message' => 'Notification marquée comme lue',
+                'unread_count' => $unreadCount
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Error marking notification as read: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erreur lors du marquage',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Get notification statistics for a person
-     */
-    public function getStats($personId)
+    public function markAllAsRead(Request $request)
     {
         try {
-            $stats = [
-                'total_notifications' => DB::table('notifications')->where('person_id', $personId)->count(),
-                'unread_notifications' => DB::table('notifications')->where('person_id', $personId)->where('read', false)->count(),
-                'read_notifications' => DB::table('notifications')->where('person_id', $personId)->where('read', true)->count(),
-                'by_type' => DB::table('notifications')
-                    ->where('person_id', $personId)
-                    ->select('type', DB::raw('count(*) as count'))
-                    ->groupBy('type')
-                    ->get()
-                    ->pluck('count', 'type')
-            ];
+            $user = $request->user();
+            
+            $updated = Notification::where('person_id', $user->id)
+                ->where('read', false)
+                ->update([
+                    'read' => true,
+                    'read_at' => now()
+                ]);
 
-            return response()->json($stats, 200);
-        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Erreur lors de la récupération des statistiques',
+                'message' => 'Toutes les notifications ont été marquées comme lues',
+                'marked_count' => $updated
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Error marking all as read: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erreur lors du marquage',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Bulk create notifications (for sending to multiple users)
-     */
-    public function bulkCreate(Request $request)
+    public function destroy($id, Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'person_ids' => 'required|array',
-            'person_ids.*' => 'exists:persons,id',
-            'type' => 'required|in:info,success,warning,error,event,request,ticket',
-            'title' => 'required|string|max:255',
-            'message' => 'required|string',
-            'dashboard_link' => 'nullable|string|max:500',
-            'data' => 'nullable|array',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Erreur de validation',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            $notifications = [];
-            foreach ($request->person_ids as $personId) {
-                $notifications[] = [
-                    'person_id' => $personId,
-                    'type' => $request->type,
-                    'title' => $request->title,
-                    'message' => $request->message,
-                    'dashboard_link' => $request->dashboard_link,
-                    'data' => $request->data ? json_encode($request->data) : null,
-                    'read' => false,
-                    'email_sent' => false,
-                    'created_at' => now(),
-                ];
+            $user = $request->user();
+            
+            $notification = Notification::where('id', $id)
+                ->where('person_id', $user->id)
+                ->first();
+
+            if (!$notification) {
+                return response()->json(['message' => 'Notification non trouvée'], 404);
             }
 
-            DB::table('notifications')->insert($notifications);
+            $notification->delete();
 
-            return response()->json([
-                'message' => 'Notifications créées avec succès',
-                'count' => count($notifications)
-            ], 201);
+            return response()->json(['message' => 'Notification supprimée'], 200);
+
         } catch (\Exception $e) {
+            \Log::error('Error deleting notification: ' . $e->getMessage());
             return response()->json([
-                'message' => 'Erreur lors de la création des notifications',
+                'message' => 'Erreur lors de la suppression',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getUnreadCount(Request $request)
+    {
+        try {
+            $user = $request->user();
+            
+            $unreadCount = Notification::where('person_id', $user->id)
+                ->where('read', false)
+                ->count();
+
+            return response()->json(['unread_count' => $unreadCount], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Error getting unread count: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Erreur lors du comptage',
                 'error' => $e->getMessage()
             ], 500);
         }

@@ -247,6 +247,7 @@ class AuthController extends Controller
             $data = $request->only(['first_name', 'last_name', 'phone']);
             
             if ($request->hasFile('avatar')) {
+                // Supprimer l'ancien avatar
                 if ($person->avatar && \Storage::disk('public')->exists($person->avatar)) {
                     \Storage::disk('public')->delete($person->avatar);
                 }
@@ -257,14 +258,30 @@ class AuthController extends Controller
             $person->update($data);
             $person->refresh();
             
-            $person->avatar_url = $person->avatar ? url('storage/' . $person->avatar) : null;
+            Log::info('Profile updated', ['person_id' => $person->id, 'avatar' => $person->avatar]);
             
-            Log::info('Profile updated', ['person_id' => $person->id]);
-            
-            return response()->json(['message' => 'Profil mis à jour', 'user' => $person], 200);
+            // ✅ FIX: retourner un tableau explicite (pas le modèle Eloquent)
+            // pour garantir que avatar_url est bien présent dans le JSON
+            return response()->json([
+                'message' => 'Profil mis à jour',
+                'user' => [
+                    'id' => $person->id,
+                    'first_name' => $person->first_name,
+                    'last_name' => $person->last_name,
+                    'email' => $person->email,
+                    'phone' => $person->phone,
+                    'avatar' => $person->avatar,
+                    'avatar_url' => $person->avatar ? url('storage/' . $person->avatar) : null,
+                    'member_code' => $person->member_code,
+                    'role' => $person->role,
+                    'is_active' => $person->is_active,
+                    'club_id' => $person->club_id ?? null,
+                ]
+            ], 200);
+
         } catch (\Exception $e) {
             Log::error('Profile update error: ' . $e->getMessage());
-            return response()->json(['message' => 'Erreur'], 500);
+            return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
         }
     }
 

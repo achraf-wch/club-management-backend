@@ -25,7 +25,7 @@ return [
     // Don't expose extra headers
     'exposed_headers' => [],
     
-    // Don't cache CORS preflight requests
+    // Don't cache CORS pr<eflight requests
     'max_age' => 0,
     
     // 🔴 THIS IS THE MOST IMPORTANT LINE!

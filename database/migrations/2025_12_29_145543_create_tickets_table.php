@@ -13,7 +13,7 @@ return new class extends Migration
     {
        Schema::create('tickets', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('event_id')->constrained('event')->onDelete('cascade');
+            $table->foreignId('event_id')->constrained('events')->onDelete('cascade');
             $table->foreignId('person_id')->constrained('persons')->onDelete('cascade');
             $table->string('qr_code')->unique();
             $table->enum('status', ['valid', 'scanned', 'expired', 'cancelled'])->default('valid');

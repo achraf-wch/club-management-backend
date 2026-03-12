@@ -201,19 +201,20 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     });
 
     // Clubs
-    Route::get('/my-club',                    [ClubController::class, 'getMyClub']);     // président uniquement
-    Route::get('/my-club-info',               [ClubController::class, 'getMyClubInfo']); // ← président + bureau
+    Route::get('/my-club',                    [ClubController::class, 'getMyClub']);
+    Route::get('/my-club-info',               [ClubController::class, 'getMyClubInfo']);
     Route::post('/clubs',                     [ClubController::class, 'store']);
     Route::put('/clubs/{id}',                 [ClubController::class, 'update']);
     Route::delete('/clubs/{id}',              [ClubController::class, 'destroy']);
     Route::patch('/clubs/{id}/members/count', [ClubController::class, 'updateMemberCounts']);
 
     // Events
-    Route::post('/events',              [EventController::class, 'store']);
-    Route::put('/events/{id}',          [EventController::class, 'update']);
-    Route::delete('/events/{id}',       [EventController::class, 'destroy']);
-    Route::patch('/events/{id}/status', [EventController::class, 'updateStatus']);
-    Route::post('/events/{id}/recap',   [EventController::class, 'addRecap']);
+    Route::post('/events',                          [EventController::class, 'store']);
+    Route::put('/events/{id}',                      [EventController::class, 'update']);
+    Route::delete('/events/{id}',                   [EventController::class, 'destroy']);
+    Route::patch('/events/{id}/status',             [EventController::class, 'updateStatus']);
+    Route::post('/events/{id}/recap',               [EventController::class, 'addRecap']);
+    Route::post('/events/{id}/assign-tickets',      [EventController::class, 'assignTicketsToSelected']); // ← NEW
 
     // Members
     Route::get('/my-club-membership',       [MemberController::class, 'getMyClubMembership']);

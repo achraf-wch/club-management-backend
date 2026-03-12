@@ -46,7 +46,7 @@ class ScanController extends Controller
 
             // ── 2. Find ticket ──
             $query = DB::table('tickets')
-                ->join('event',   'tickets.event_id',  '=', 'event.id')
+                ->join('events',  'tickets.event_id',  '=', 'events.id')
                 ->join('persons', 'tickets.person_id', '=', 'persons.id')
                 ->select(
                     'tickets.id',
@@ -56,9 +56,9 @@ class ScanController extends Controller
                     'tickets.scanned_by',
                     'tickets.event_id',
                     'tickets.person_id',
-                    'event.title as event_title',
-                    'event.event_date',
-                    'event.location as event_location',
+                    'events.title as event_title',
+                    'events.event_date',
+                    'events.location as event_location',
                     'persons.first_name',
                     'persons.last_name',
                     'persons.email'
@@ -175,7 +175,7 @@ class ScanController extends Controller
     {
         try {
             $tickets = DB::table('tickets')
-                ->join('event',   'tickets.event_id',  '=', 'event.id')
+                ->join('events',  'tickets.event_id',  '=', 'events.id')
                 ->join('persons', 'tickets.person_id', '=', 'persons.id')
                 ->leftJoin('persons as scanner', 'tickets.scanned_by', '=', 'scanner.id')
                 ->where('tickets.event_id', $eventId)
@@ -186,7 +186,7 @@ class ScanController extends Controller
                     'tickets.status',
                     'tickets.scanned_at',
                     'tickets.scanned_by',
-                    'event.title as event_title',
+                    'events.title as event_title',
                     'persons.first_name',
                     'persons.last_name',
                     'persons.email',

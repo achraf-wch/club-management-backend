@@ -252,36 +252,37 @@ class MemberController extends Controller
     }
 
     // ============ NOUVELLE MÉTHODE PUBLIQUE ============
-    public function getByClub($clubId)
-    {
-        try {
-            $members = DB::table('club_members')
-                ->join('persons', 'club_members.person_id', '=', 'persons.id')
-                ->where('club_members.club_id', $clubId)
-                ->where('club_members.status', 'active')
-                ->select(
-                    'club_members.id',
-                    'club_members.club_id',
-                    'club_members.role',
-                    'club_members.status',
-                    'club_members.position',
-                    'persons.first_name',
-                    'persons.last_name',
-                    'persons.email',
-                    'persons.phone',
-                    'persons.avatar'
-                )
-                ->get()
-                ->map(function($m) {
-                    $m->avatar_url = $m->avatar ? url('storage/' . $m->avatar) : null;
-                    return $m;
-                });
+   public function getByClub($clubId)
+{
+    try {
+        $members = DB::table('club_members')
+            ->join('persons', 'club_members.person_id', '=', 'persons.id')
+            ->where('club_members.club_id', $clubId)
+            ->where('club_members.status', 'active')
+            ->select(
+                'club_members.id',
+                'club_members.person_id',   // ← ADD THIS LINE
+                'club_members.club_id',
+                'club_members.role',
+                'club_members.status',
+                'club_members.position',
+                'persons.first_name',
+                'persons.last_name',
+                'persons.email',
+                'persons.phone',
+                'persons.avatar'
+            )
+            ->get()
+            ->map(function($m) {
+                $m->avatar_url = $m->avatar ? url('storage/' . $m->avatar) : null;
+                return $m;
+            });
 
-            return response()->json($members, 200);
-        } catch (\Exception $e) {
-            return response()->json(['message' => 'Erreur', 'error' => $e->getMessage()], 500);
-        }
+        return response()->json($members, 200);
+    } catch (\Exception $e) {
+        return response()->json(['message' => 'Erreur', 'error' => $e->getMessage()], 500);
     }
+}
     // ============ FIN NOUVELLE MÉTHODE ============
 
     public function store(Request $request)

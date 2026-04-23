@@ -87,7 +87,21 @@ class ClubController extends Controller
         }
 
         try {
+            $person = $request->user();
             $club = Club::findOrFail($id);
+
+            if ($person && $person->role !== 'admin') {
+                $membership = Club_member::where('person_id', $person->id)
+                    ->where('club_id', $club->id)
+                    ->whereIn('role', ['president', 'board'])
+                    ->where('status', 'active')
+                    ->first();
+
+                if (!$membership) {
+                    return response()->json(['message' => 'Vous n\'avez pas accès à la gestion de ce club'], 403);
+                }
+            }
+
             $data = $request->all();
 
             if ($request->hasFile('logo')) {

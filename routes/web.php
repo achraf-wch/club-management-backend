@@ -170,7 +170,6 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     Route::middleware(['role:admin'])->group(function () {
         // Club management
         Route::post('/clubs',                     [ClubController::class, 'store']);
-        Route::put('/clubs/{id}',                 [ClubController::class, 'update']);
         Route::delete('/clubs/{id}',              [ClubController::class, 'destroy']);
         Route::patch('/clubs/{id}/members/count', [ClubController::class, 'updateMemberCounts']);
 
@@ -198,6 +197,7 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     // PRESIDENT + BOARD ROUTES
     // ============================================
     Route::middleware(['club_role:president,board'])->group(function () {
+        Route::put('/clubs/{id}',                  [ClubController::class, 'update']);
         Route::post('/events',                     [EventController::class, 'store']);
         Route::put('/events/{id}',                 [EventController::class, 'update']);
         Route::post('/events/{id}/assign-tickets', [EventController::class, 'assignTicketsToSelected']);

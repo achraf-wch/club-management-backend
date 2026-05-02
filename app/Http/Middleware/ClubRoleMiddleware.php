@@ -23,8 +23,36 @@ class ClubRoleMiddleware
         
         $clubId = null;
         
+        // Routes such as /api/members/{id} receive a membership id, not a club id.
+        if ($request->route('id') && str_contains($request->path(), 'members/')) {
+            $membershipId = $request->route('id');
+            $membership = DB::table('club_members')->where('id', $membershipId)->first();
+            if ($membership) {
+                $clubId = $membership->club_id;
+            }
+        }
+        // Routes such as /api/events/{id} receive an event id, not a club id.
+        elseif ($request->route('id') && str_contains($request->path(), 'events/')) {
+            $eventId = $request->route('id');
+            $event = DB::table('events')->where('id', $eventId)->first();
+            if ($event) {
+                $clubId = $event->club_id;
+            }
+        }
+        // Routes such as /api/tickets/{id} receive a ticket id, not a club id.
+        elseif ($request->route('id') && str_contains($request->path(), 'tickets/')) {
+            $ticketId = $request->route('id');
+            $ticket = DB::table('tickets')
+                ->join('events', 'tickets.event_id', '=', 'events.id')
+                ->where('tickets.id', $ticketId)
+                ->select('events.club_id')
+                ->first();
+            if ($ticket) {
+                $clubId = $ticket->club_id;
+            }
+        }
         // Special handling for request validation routes
-        if ($request->route('id') && str_contains($request->path(), 'requests/')) {
+        elseif ($request->route('id') && str_contains($request->path(), 'requests/')) {
             // This is a request validation route (e.g., /api/requests/5/validate)
             $requestId = $request->route('id');
             $req = DB::table('request')->where('id', $requestId)->first();

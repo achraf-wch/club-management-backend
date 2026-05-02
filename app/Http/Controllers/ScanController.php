@@ -153,10 +153,16 @@ class ScanController extends Controller
     public function getEventScanStats($eventId)
     {
         try {
-            $total     = DB::table('tickets')->where('event_id', $eventId)->count();
-            $scanned   = DB::table('tickets')->where('event_id', $eventId)->where('status', 'scanned')->count();
-            $valid     = DB::table('tickets')->where('event_id', $eventId)->where('status', 'valid')->count();
-            $cancelled = DB::table('tickets')->where('event_id', $eventId)->where('status', 'cancelled')->count();
+            $statusCounts = DB::table('tickets')
+                ->where('event_id', $eventId)
+                ->select('status', DB::raw('COUNT(*) as total'))
+                ->groupBy('status')
+                ->pluck('total', 'status');
+
+            $total     = $statusCounts->sum();
+            $scanned   = (int) ($statusCounts['scanned'] ?? 0);
+            $valid     = (int) ($statusCounts['valid'] ?? 0);
+            $cancelled = (int) ($statusCounts['cancelled'] ?? 0);
 
             return response()->json([
                 'total_tickets'     => $total,

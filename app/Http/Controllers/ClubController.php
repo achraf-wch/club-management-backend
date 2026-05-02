@@ -134,6 +134,18 @@ class ClubController extends Controller
             if ($request->has('category')) $query->where('category', $request->category);
             if ($request->has('is_public')) $query->where('is_public', $request->boolean('is_public'));
             if ($request->has('search')) $query->where('name', 'like', '%' . $request->search . '%');
+            $query->select('clubs.*')
+                ->selectSub(function ($q) {
+                    $q->from('club_members')
+                        ->selectRaw('count(*)')
+                        ->whereColumn('club_members.club_id', 'clubs.id');
+                }, 'total_members_count')
+                ->selectSub(function ($q) {
+                    $q->from('club_members')
+                        ->selectRaw('count(*)')
+                        ->whereColumn('club_members.club_id', 'clubs.id')
+                        ->where('club_members.status', 'active');
+                }, 'active_members_count');
             $query->orderBy($request->get('order_by', 'created_at'), $request->get('order_dir', 'desc'));
             $clubs = $query->get();
             $clubs->each(fn($club) => $this->addImageUrls($club));
@@ -149,6 +161,69 @@ class ClubController extends Controller
             $club = Club::findOrFail($id);
             $this->addImageUrls($club);
             return response()->json($club, 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['message' => 'Club non trouvé'], 404);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function publicDetail($id)
+    {
+        try {
+            $club = Club::findOrFail($id);
+            $this->addImageUrls($club);
+
+            $members = DB::table('club_members')
+                ->join('persons', 'club_members.person_id', '=', 'persons.id')
+                ->where('club_members.club_id', $id)
+                ->where('club_members.status', 'active')
+                ->select(
+                    'club_members.id',
+                    'club_members.person_id',
+                    'club_members.club_id',
+                    'club_members.role',
+                    'club_members.status',
+                    'club_members.position',
+                    'persons.first_name',
+                    'persons.last_name',
+                    'persons.email',
+                    'persons.phone',
+                    'persons.avatar'
+                )
+                ->get()
+                ->map(function ($member) {
+                    $member->avatar_url = $member->avatar ? url('storage/' . $member->avatar) : null;
+                    return $member;
+                });
+
+            $events = DB::table('events')
+                ->where('club_id', $id)
+                ->orderBy('event_date', 'desc')
+                ->select(
+                    'id',
+                    'club_id',
+                    'title',
+                    'description',
+                    'category',
+                    'event_date',
+                    'location',
+                    'status',
+                    'banner_image',
+                    'created_at'
+                )
+                ->get()
+                ->map(function ($event) {
+                    $event->banner_url = $event->banner_image ? url('storage/' . $event->banner_image) : null;
+                    return $event;
+                });
+
+            return response()->json([
+                'club' => $club,
+                'members' => $members,
+                'events' => $events,
+                'categories' => $events->pluck('category')->filter()->unique()->values(),
+            ], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['message' => 'Club non trouvé'], 404);
         } catch (\Exception $e) {
@@ -254,6 +329,76 @@ class ClubController extends Controller
             return response()->json($result, 200);
         } catch (\Exception $e) {
             return response()->json(['message' => 'Erreur lors de la récupération du club', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getDashboardSummary(Request $request)
+    {
+        try {
+            $person = $request->user();
+            if (!$person) return response()->json(['message' => 'Non authentifié'], 401);
+
+            $membership = DB::table('club_members')
+                ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+                ->where('club_members.person_id', $person->id)
+                ->whereIn('club_members.role', ['president', 'board'])
+                ->where('club_members.status', 'active')
+                ->select(
+                    'club_members.role as member_role',
+                    'clubs.id',
+                    'clubs.name',
+                    'clubs.code',
+                    'clubs.description',
+                    'clubs.logo',
+                    'clubs.cover_image',
+                    'clubs.category',
+                    'clubs.founding_year',
+                    'clubs.is_public',
+                    'clubs.total_members',
+                    'clubs.active_members'
+                )
+                ->first();
+
+            if (!$membership) {
+                return response()->json(['message' => 'Aucun club trouvé pour cet utilisateur'], 403);
+            }
+
+            $this->addImageUrls($membership);
+
+            $membersCount = DB::table('club_members')
+                ->where('club_id', $membership->id)
+                ->where('status', 'active')
+                ->count();
+
+            $eventsCount = DB::table('events')
+                ->where('club_id', $membership->id)
+                ->count();
+
+            $pendingRequests = $membership->member_role === 'president'
+                ? DB::table('request')
+                    ->where('club_id', $membership->id)
+                    ->where('status', 'pending')
+                    ->count()
+                : 0;
+
+            return response()->json([
+                'profile' => [
+                    'id' => $person->id,
+                    'first_name' => $person->first_name,
+                    'last_name' => $person->last_name,
+                    'email' => $person->email,
+                    'avatar' => $person->avatar,
+                    'avatar_url' => $person->avatar ? url('storage/' . $person->avatar) : null,
+                ],
+                'club' => $membership,
+                'counts' => [
+                    'members' => $membersCount,
+                    'events' => $eventsCount,
+                    'pending_requests' => $pendingRequests,
+                ],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Erreur lors du chargement du dashboard', 'error' => $e->getMessage()], 500);
         }
     }
 

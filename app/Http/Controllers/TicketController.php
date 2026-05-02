@@ -525,11 +525,17 @@ class TicketController extends Controller
     public function getEventStats($eventId)
     {
         try {
+            $statusCounts = DB::table('tickets')
+                ->where('event_id', $eventId)
+                ->select('status', DB::raw('COUNT(*) as total'))
+                ->groupBy('status')
+                ->pluck('total', 'status');
+
             $stats = [
-                'total_tickets'     => DB::table('tickets')->where('event_id', $eventId)->count(),
-                'valid_tickets'     => DB::table('tickets')->where('event_id', $eventId)->where('status', 'valid')->count(),
-                'scanned_tickets'   => DB::table('tickets')->where('event_id', $eventId)->where('status', 'scanned')->count(),
-                'cancelled_tickets' => DB::table('tickets')->where('event_id', $eventId)->where('status', 'cancelled')->count(),
+                'total_tickets'     => $statusCounts->sum(),
+                'valid_tickets'     => (int) ($statusCounts['valid'] ?? 0),
+                'scanned_tickets'   => (int) ($statusCounts['scanned'] ?? 0),
+                'cancelled_tickets' => (int) ($statusCounts['cancelled'] ?? 0),
             ];
 
             return response()->json($stats, 200);

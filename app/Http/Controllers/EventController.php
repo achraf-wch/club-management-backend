@@ -44,10 +44,41 @@ class EventController extends Controller
     //  PUBLIC CRUD
     // ─────────────────────────────────────────────────────────────
 
-    public function index()
+    public function index(Request $request)
     {
         try {
-            $events = Event::all();
+            $query = Event::query();
+
+            if ($request->filled('club_id')) {
+                $query->where('club_id', $request->integer('club_id'));
+            }
+
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->filled('category')) {
+                $query->where('category', $request->category);
+            }
+
+            if ($request->filled('created_after')) {
+                $query->where('created_at', '>=', $request->created_after);
+            }
+
+            $allowedOrderColumns = ['created_at', 'event_date', 'title', 'status'];
+            $orderBy = in_array($request->get('order_by'), $allowedOrderColumns, true)
+                ? $request->get('order_by')
+                : 'event_date';
+            $orderDir = strtolower($request->get('order_dir', 'desc')) === 'asc' ? 'asc' : 'desc';
+
+            $query->orderBy($orderBy, $orderDir);
+
+            if ($request->filled('limit')) {
+                $query->limit(min(max($request->integer('limit'), 1), 100));
+            }
+
+            $events = $query->get();
+
             $events->each(fn($e) => $this->addImageUrls($e));
             return response()->json($events, 200);
         } catch (\Exception $e) {

@@ -96,9 +96,10 @@ Route::get('/api/clubs/{clubId}/president', [MemberController::class, 'getPresid
 
 Route::get('/api/clubs',                 [ClubController::class,  'index']);
 Route::get('/api/clubs/code/{code}',     [ClubController::class,  'showByCode']);
-Route::get('/api/clubs/{id}',            [ClubController::class,  'show']);
+Route::get('/api/clubs/{id}/detail',     [ClubController::class,  'publicDetail']);
 Route::get('/api/clubs/{id}/statistics', [ClubController::class,  'statistics']);
 Route::get('/api/clubs/{id}/members',    [MemberController::class, 'getByClub']);
+Route::get('/api/clubs/{id}',            [ClubController::class,  'show']);
 
 Route::get('/api/events/upcoming/list',  [EventController::class, 'upcoming']);
 Route::get('/api/events/past/completed', [EventController::class, 'pastEvents']);
@@ -189,6 +190,7 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
     Route::middleware(['club_role:president,board,member'])->group(function () {
         Route::get('/my-club',            [ClubController::class,  'getMyClub']);
         Route::get('/my-club-info',       [ClubController::class,  'getMyClubInfo']);
+        Route::get('/club-dashboard-summary', [ClubController::class,  'getDashboardSummary']);
         Route::get('/my-club-membership', [MemberController::class, 'getMyClubMembership']);
         Route::get('/persons/{personId}/clubs', [MemberController::class, 'getPersonClubs']);
     });

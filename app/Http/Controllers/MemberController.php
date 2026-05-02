@@ -557,29 +557,21 @@ class MemberController extends Controller
     public function getClubStats($clubId)
     {
         try {
+            $activeRoleCounts = DB::table('club_members')
+                ->where('club_id', $clubId)
+                ->where('status', 'active')
+                ->select('role', DB::raw('COUNT(*) as total'))
+                ->groupBy('role')
+                ->pluck('total', 'role');
+
             $stats = [
                 'total_members' => DB::table('club_members')
                     ->where('club_id', $clubId)
                     ->count(),
-                'active_members' => DB::table('club_members')
-                    ->where('club_id', $clubId)
-                    ->where('status', 'active')
-                    ->count(),
-                'presidents' => DB::table('club_members')
-                    ->where('club_id', $clubId)
-                    ->where('role', 'president')
-                    ->where('status', 'active')
-                    ->count(),
-                'board_members' => DB::table('club_members')
-                    ->where('club_id', $clubId)
-                    ->where('role', 'board')
-                    ->where('status', 'active')
-                    ->count(),
-                'regular_members' => DB::table('club_members')
-                    ->where('club_id', $clubId)
-                    ->where('role', 'member')
-                    ->where('status', 'active')
-                    ->count(),
+                'active_members' => $activeRoleCounts->sum(),
+                'presidents' => (int) ($activeRoleCounts['president'] ?? 0),
+                'board_members' => (int) ($activeRoleCounts['board'] ?? 0),
+                'regular_members' => (int) ($activeRoleCounts['member'] ?? 0),
             ];
 
             return response()->json($stats, 200);
@@ -636,6 +628,8 @@ class MemberController extends Controller
                     'clubs.logo as club_logo',
                     'clubs.description as club_description',
                     'clubs.category as club_category',
+                    'clubs.total_members as club_total_members',
+                    'clubs.active_members as club_active_members',
                     'persons.first_name',
                     'persons.last_name',
                     'persons.email'
@@ -653,6 +647,8 @@ class MemberController extends Controller
                 'logo_url' => $membership->club_logo ? url('storage/' . $membership->club_logo) : null,
                 'description' => $membership->club_description,
                 'category' => $membership->club_category,
+                'total_members' => $membership->club_total_members,
+                'active_members' => $membership->club_active_members,
             ];
 
             $membershipData = (object)[

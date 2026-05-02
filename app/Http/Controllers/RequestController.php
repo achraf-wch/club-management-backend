@@ -365,11 +365,17 @@ class RequestController extends Controller
     public function getClubStats($clubId)
     {
         try {
+            $statusCounts = DB::table('request')
+                ->where('club_id', $clubId)
+                ->select('status', DB::raw('COUNT(*) as total'))
+                ->groupBy('status')
+                ->pluck('total', 'status');
+
             $stats = [
-                'total_requests' => DB::table('request')->where('club_id', $clubId)->count(),
-                'pending_requests' => DB::table('request')->where('club_id', $clubId)->where('status', 'pending')->count(),
-                'approved_requests' => DB::table('request')->where('club_id', $clubId)->where('status', 'approved')->count(),
-                'rejected_requests' => DB::table('request')->where('club_id', $clubId)->where('status', 'rejected')->count(),
+                'total_requests' => $statusCounts->sum(),
+                'pending_requests' => (int) ($statusCounts['pending'] ?? 0),
+                'approved_requests' => (int) ($statusCounts['approved'] ?? 0),
+                'rejected_requests' => (int) ($statusCounts['rejected'] ?? 0),
             ];
 
             return response()->json($stats, 200);

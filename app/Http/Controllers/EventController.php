@@ -95,6 +95,23 @@ class EventController extends Controller
                 return response()->json(['message' => 'Event not found'], 404);
             }
             $this->addImageUrls($event);
+            $club = DB::table('clubs')
+                ->where('id', $event->club_id)
+                ->select(
+                    'id',
+                    'name',
+                    'logo',
+                    'instagram_url',
+                    'linkedin_url',
+                    'facebook_url',
+                    'contact_email'
+                )
+                ->first();
+
+            if ($club) {
+                $club->logo_url = $club->logo ? url('storage/' . $club->logo) : null;
+                $event->club = $club;
+            }
             return response()->json($event, 200);
         } catch (\Exception $e) {
             Log::error('Error fetching event: ' . $e->getMessage());

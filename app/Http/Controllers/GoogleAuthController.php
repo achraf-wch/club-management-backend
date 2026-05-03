@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Person;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -42,9 +43,7 @@ class GoogleAuthController extends Controller
                 ->stateless()
                 ->user();
 
-            $person = Person::where('google_id', $googleUser->getId())
-                ->orWhere('google_email', $googleUser->getEmail())
-                ->first();
+            $person = Person::where('google_id', $googleUser->getId())->first();
 
             if (!$person) {
                 Log::warning('Google login: no linked account found', [
@@ -101,7 +100,8 @@ class GoogleAuthController extends Controller
 
         return Socialite::driver('google')
             ->redirectUrl(env('GOOGLE_LINK_REDIRECT_URI'))
-            ->with(['state' => base64_encode($personId)])
+            ->stateless()
+            ->with(['state' => Crypt::encryptString((string) $personId)])
             ->redirect();
     }
 
@@ -127,8 +127,17 @@ class GoogleAuthController extends Controller
                 ->stateless()
                 ->user();
 
-            $state    = $request->get('state');
-            $personId = $state ? base64_decode($state) : null;
+            $state = $request->get('state');
+            $personId = null;
+
+            if ($state) {
+                try {
+                    $personId = Crypt::decryptString($state);
+                } catch (\Exception $e) {
+                    Log::warning('Invalid Google link state', ['message' => $e->getMessage()]);
+                    return redirect($this->accountSetupUrl() . '?error=session_expired');
+                }
+            }
 
             Log::info('linkCallback decoded', [
                 'person_id'    => $personId,
@@ -146,8 +155,11 @@ class GoogleAuthController extends Controller
                 return redirect($this->accountSetupUrl() . '?error=user_not_found');
             }
 
-            $existingLink = Person::where('google_id', $googleUser->getId())
-                ->where('id', '!=', $person->id)
+            $existingLink = Person::where('id', '!=', $person->id)
+                ->where(function ($query) use ($googleUser) {
+                    $query->where('google_id', $googleUser->getId())
+                        ->orWhere('google_email', $googleUser->getEmail());
+                })
                 ->first();
 
             if ($existingLink) {

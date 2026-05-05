@@ -30,54 +30,7 @@ Route::prefix('/api/auth/google')->middleware('web')->group(function () {
     Route::get('/link/callback', [GoogleAuthController::class, 'linkCallback'])->name('google.link.callback');
 });
 
-Route::get('/api/verify-session', function (Request $request) {
-    try {
-        if (!Auth::check()) {
-            return response()->json(['message' => 'Non authentifié'], 401);
-        }
-        $person = Auth::user();
-        if (!$person->is_active) {
-            Auth::logout();
-            return response()->json(['message' => 'Compte désactivé'], 401);
-        }
-        $clubRole = null;
-        $clubId   = null;
-        if ($person->role === 'user') {
-            $membership = Club_member::where('person_id', $person->id)
-                ->where('status', 'active')
-                ->orderByRaw("CASE
-                    WHEN role = 'president' THEN 1
-                    WHEN role = 'board'     THEN 2
-                    WHEN role = 'member'    THEN 3
-                    ELSE 4
-                END")
-                ->first();
-            if ($membership) {
-                $clubRole = $membership->role;
-                $clubId   = $membership->club_id;
-            }
-        }
-        return response()->json([
-            'user' => [
-                'id'                 => $person->id,
-                'first_name'         => $person->first_name,
-                'last_name'          => $person->last_name,
-                'email'              => $person->email,
-                'avatar'             => $person->avatar,
-                'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
-                'member_code'        => $person->member_code,
-                'two_factor_enabled' => $person->two_factor_enabled,
-                'club_id'            => $clubId,
-            ],
-            'role'      => $person->role,
-            'club_role' => $clubRole,
-            'club_id'   => $clubId,
-        ], 200);
-    } catch (\Exception $e) {
-        Log::error('Session verification error: ' . $e->getMessage());
-        return response()->json(['message' => 'Erreur serveur'], 500);
-    }
-})->middleware('web');
+Route::get('/api/verify-session', [AuthController::class, 'verifySession'])->middleware('web');
 
 // ============================================
 // PUBLIC 2FA VERIFY ROUTE
@@ -131,6 +84,8 @@ Route::middleware(['auth:web'])->prefix('/api')->group(function () {
 
     // ----- PROFILE & SETTINGS (any authenticated user) -----
     Route::post('/logout',          [AuthController::class, 'logout']);
+    Route::post('/select-club',     [AuthController::class, 'selectClub']);
+    Route::post('/account/setup',   [AuthController::class, 'setupAccount']);
     Route::get('/profile',          [AuthController::class, 'profile']);
     Route::post('/profile',         [AuthController::class, 'updateProfile']);
     Route::put('/profile',          [AuthController::class, 'updateProfile']);

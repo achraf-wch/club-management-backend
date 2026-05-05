@@ -398,7 +398,7 @@ class RequestController extends Controller
     private function processMemberRequest($clubId, $metadata)
     {
         // 🔥 Validate required metadata fields
-        $required = ['first_name', 'last_name', 'email', 'password'];
+        $required = ['first_name', 'last_name', 'email'];
         foreach ($required as $field) {
             if (empty($metadata[$field])) {
                 throw new \Exception("Champ manquant dans metadata: $field");
@@ -407,11 +407,13 @@ class RequestController extends Controller
 
         DB::beginTransaction();
         try {
-            // Check if person already exists by email
             $person = Person::where('email', $metadata['email'])->first();
 
             if (!$person) {
-                // Create new person
+                if (empty($metadata['password'])) {
+                    throw new \Exception("Champ manquant dans metadata: password");
+                }
+
                 $personData = [
                     'first_name'  => $metadata['first_name'],
                     'last_name'   => $metadata['last_name'],
@@ -427,7 +429,7 @@ class RequestController extends Controller
                 $person = Person::create($personData);
                 Log::info('Person created', ['person_id' => $person->id, 'email' => $person->email]);
             } else {
-                Log::info('Person already exists', ['person_id' => $person->id]);
+                Log::info('Existing person reused for new membership', ['person_id' => $person->id, 'email' => $person->email]);
             }
 
             // Check if already a member of this club

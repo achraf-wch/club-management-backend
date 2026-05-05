@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\DB;
 
 class ClubController extends Controller
 {
+    private function selectedClubId(Request $request)
+    {
+        return $request->session()->get('selected_club_id') ?? $request->input('club_id');
+    }
+
     private function addImageUrls($club)
     {
         $logoPath = $club->logo ?? null;
@@ -289,11 +294,14 @@ class ClubController extends Controller
             $person = $request->user();
             if (!$person) return response()->json(['message' => 'Non authentifié'], 401);
 
+            $selectedClubId = $this->selectedClubId($request);
+
             $result = DB::table('club_members')
                 ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
                 ->where('club_members.person_id', $person->id)
                 ->where('club_members.role', 'president')
                 ->where('club_members.status', 'active')
+                ->when($selectedClubId, fn($query) => $query->where('club_members.club_id', $selectedClubId))
                 ->select('clubs.*', 'club_members.id as membership_id')
                 ->first();
 
@@ -315,11 +323,14 @@ class ClubController extends Controller
             $person = $request->user();
             if (!$person) return response()->json(['message' => 'Non authentifié'], 401);
 
+            $selectedClubId = $this->selectedClubId($request);
+
             $result = DB::table('club_members')
                 ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
                 ->where('club_members.person_id', $person->id)
                 ->whereIn('club_members.role', ['president', 'board'])
                 ->where('club_members.status', 'active')
+                ->when($selectedClubId, fn($query) => $query->where('club_members.club_id', $selectedClubId))
                 ->select(
                     'clubs.id', 'clubs.name', 'clubs.code', 'clubs.description',
                     'clubs.mission', 'clubs.instagram_url', 'clubs.linkedin_url',
@@ -348,11 +359,14 @@ class ClubController extends Controller
             $person = $request->user();
             if (!$person) return response()->json(['message' => 'Non authentifié'], 401);
 
+            $selectedClubId = $this->selectedClubId($request);
+
             $membership = DB::table('club_members')
                 ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
                 ->where('club_members.person_id', $person->id)
                 ->whereIn('club_members.role', ['president', 'board'])
                 ->where('club_members.status', 'active')
+                ->when($selectedClubId, fn($query) => $query->where('club_members.club_id', $selectedClubId))
                 ->select(
                     'club_members.role as member_role',
                     'clubs.id',

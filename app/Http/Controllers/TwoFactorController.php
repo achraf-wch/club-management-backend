@@ -185,44 +185,10 @@ class TwoFactorController extends Controller
         Auth::login($person, true);
         $request->session()->regenerate();
 
-        $clubRole = null;
-        $clubId   = null;
-
-        if ($person->role === 'user') {
-            $membership = \App\Models\Club_member::where('person_id', $person->id)
-                ->where('status', 'active')
-                ->orderByRaw("CASE
-                    WHEN role = 'president' THEN 1
-                    WHEN role = 'board'     THEN 2
-                    WHEN role = 'member'    THEN 3
-                    ELSE 4
-                END")
-                ->first();
-
-            if ($membership) {
-                $clubRole = $membership->role;
-                $clubId   = $membership->club_id;
-            }
-        }
-
         Log::info('2FA login verified', ['person_id' => $person->id]);
 
-        return response()->json([
-            'message'   => 'Connexion réussie',
-            'user'      => [
-                'id'                 => $person->id,
-                'first_name'         => $person->first_name,
-                'last_name'          => $person->last_name,
-                'email'              => $person->email,
-                'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
-                'member_code'        => $person->member_code,
-                'two_factor_enabled' => $person->two_factor_enabled,
-                'club_id'            => $clubId,
-            ],
-            'role'      => $person->role,
-            'club_role' => $clubRole,
-            'club_id'   => $clubId,
-        ]);
+        return app(\App\Http\Controllers\AuthController::class)
+            ->authenticatedResponse($request, $person);
     }
 
     // ─────────────────────────────────────────────

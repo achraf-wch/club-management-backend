@@ -612,11 +612,14 @@ class MemberController extends Controller
                 return response()->json(['message' => 'Non authentifié'], 401);
             }
 
+            $selectedClubId = request()->session()->get('selected_club_id') ?? request()->input('club_id');
+
             $membership = DB::table('club_members')
                 ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
                 ->join('persons', 'club_members.person_id', '=', 'persons.id')
                 ->where('club_members.person_id', $personId)
                 ->where('club_members.status', 'active')
+                ->when($selectedClubId, fn($query) => $query->where('club_members.club_id', $selectedClubId))
                 ->select(
                     'club_members.id as membership_id',
                     'club_members.role',

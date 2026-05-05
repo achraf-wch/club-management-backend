@@ -72,6 +72,9 @@ class ClubRoleMiddleware
         elseif ($request->input('club_id')) {
             $clubId = $request->input('club_id');
         }
+        elseif ($request->session()->get('selected_club_id')) {
+            $clubId = $request->session()->get('selected_club_id');
+        }
         
         // If no specific club, check if user has ANY active membership with required role
         if (!$clubId) {

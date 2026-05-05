@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class PersonController extends Controller
 {
@@ -18,7 +19,7 @@ class PersonController extends Controller
                 'last_name' => 'required|string|max:255',
                 'email' => 'required|string|email|unique:persons,email',
                 'password' => 'required|string|min:6',
-                'cne' => 'nullable|string|max:50|unique:persons,cne',
+                'cne' => 'nullable|string|max:50',
                 'phone' => 'nullable|string|max:20',
                 'avatar' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:2048',
             ]);
@@ -103,7 +104,7 @@ class PersonController extends Controller
             $validator = Validator::make($request->all(), [
                 'first_name' => 'sometimes|string|max:255',
                 'last_name' => 'sometimes|string|max:255',
-                'email' => 'sometimes|email|unique:persons,email,' . $id,
+                'email' => ['sometimes', 'email', Rule::unique('persons', 'email')->ignore($person->id)],
                 'password' => 'nullable|string|min:6',
                 'cne' => 'nullable|string|max:50',
                 'phone' => 'nullable|string|max:20',

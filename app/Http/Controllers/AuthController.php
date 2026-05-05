@@ -9,9 +9,90 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class AuthController extends Controller
 {
+    private function activeMemberships(Person $person)
+    {
+        return Club_member::query()
+            ->join('clubs', 'club_members.club_id', '=', 'clubs.id')
+            ->where('club_members.person_id', $person->id)
+            ->where('club_members.status', 'active')
+            ->orderByRaw("CASE
+                WHEN club_members.role = 'president' THEN 1
+                WHEN club_members.role = 'board'     THEN 2
+                WHEN club_members.role = 'member'    THEN 3
+                ELSE 4
+            END")
+            ->orderBy('clubs.name')
+            ->get([
+                'club_members.id as membership_id',
+                'club_members.club_id',
+                'club_members.role as club_role',
+                'club_members.position',
+                'clubs.name as club_name',
+                'clubs.logo as club_logo',
+                'clubs.category as club_category',
+            ])
+            ->map(function ($membership) {
+                $membership->club_logo_url = $membership->club_logo ? url('storage/' . $membership->club_logo) : null;
+                return $membership;
+            });
+    }
+
+    private function selectedMembership(Request $request, Person $person)
+    {
+        if ($person->role !== 'user') {
+            return null;
+        }
+
+        $memberships = $this->activeMemberships($person);
+
+        if ($memberships->count() === 1) {
+            $selected = $memberships->first();
+            $request->session()->put('selected_club_id', $selected->club_id);
+            $request->session()->put('selected_membership_id', $selected->membership_id);
+            return [$selected, $memberships];
+        }
+
+        $selectedMembershipId = $request->session()->get('selected_membership_id');
+        $selected = $memberships->firstWhere('membership_id', $selectedMembershipId) ?? $memberships->first();
+
+        if ($selected) {
+            $request->session()->put('selected_club_id', $selected->club_id);
+            $request->session()->put('selected_membership_id', $selected->membership_id);
+        }
+
+        return [$selected, $memberships];
+    }
+
+    public function authenticatedResponse(Request $request, Person $person, string $message = 'Connexion réussie')
+    {
+        [$selected, $memberships] = $this->selectedMembership($request, $person) ?? [null, collect()];
+
+        return response()->json([
+            'message'   => $message,
+            'requires_club_selection' => false,
+            'memberships' => $memberships->values(),
+            'user'      => [
+                'id'                 => $person->id,
+                'first_name'         => $person->first_name,
+                'last_name'          => $person->last_name,
+                'email'              => $person->email,
+                'avatar'             => $person->avatar,
+                'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
+                'member_code'        => $person->member_code,
+                'two_factor_enabled' => $person->two_factor_enabled,
+                'club_id'            => $selected->club_id ?? null,
+            ],
+            'role'      => $person->role,
+            'club_role' => $selected->club_role ?? null,
+            'club_id'   => $selected->club_id ?? null,
+            'membership_id' => $selected->membership_id ?? null,
+        ], 200);
+    }
+
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -60,11 +141,13 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Erreur de validation', 'errors' => $validator->errors()], 422);
             }
 
-            if (!Auth::attempt($request->only('email', 'password'))) {
+            $person = Person::where('email', $request->email)->first();
+
+            if (!$person || !$person->password || !Hash::check($request->password, $person->password)) {
                 return response()->json(['message' => 'Email ou mot de passe incorrect'], 401);
             }
 
-            $person = Auth::user();
+            Auth::login($person, true);
 
             if (!$person->is_active) {
                 Auth::logout();
@@ -92,43 +175,7 @@ class AuthController extends Controller
             // No 2FA — normal login
             $request->session()->regenerate();
 
-            $clubRole = null;
-            $clubId   = null;
-
-            if ($person->role === 'user') {
-                $membership = Club_member::where('person_id', $person->id)
-                    ->where('status', 'active')
-                    ->orderByRaw("CASE
-                        WHEN role = 'president' THEN 1
-                        WHEN role = 'board'     THEN 2
-                        WHEN role = 'member'    THEN 3
-                        ELSE 4
-                    END")
-                    ->first();
-
-                if ($membership) {
-                    $clubRole = $membership->role;
-                    $clubId   = $membership->club_id;
-                }
-            }
-
-            return response()->json([
-                'message'   => 'Connexion réussie',
-                'user'      => [
-                    'id'                 => $person->id,
-                    'first_name'         => $person->first_name,
-                    'last_name'          => $person->last_name,
-                    'email'              => $person->email,
-                    'avatar'             => $person->avatar,
-                    'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
-                    'member_code'        => $person->member_code,
-                    'two_factor_enabled' => $person->two_factor_enabled,
-                    'club_id'            => $clubId,
-                ],
-                'role'      => $person->role,
-                'club_role' => $clubRole,
-                'club_id'   => $clubId,
-            ], 200);
+            return $this->authenticatedResponse($request, $person);
 
         } catch (\Exception $e) {
             Log::error('Login error: ' . $e->getMessage());
@@ -154,48 +201,42 @@ class AuthController extends Controller
                 return response()->json(['message' => 'Compte désactivé'], 403);
             }
 
-            $clubRole = null;
-            $clubId   = null;
-
-            if ($person->role === 'user') {
-                $membership = Club_member::where('person_id', $person->id)
-                    ->where('status', 'active')
-                    ->orderByRaw("CASE
-                        WHEN role = 'president' THEN 1
-                        WHEN role = 'board'     THEN 2
-                        WHEN role = 'member'    THEN 3
-                        ELSE 4
-                    END")
-                    ->first();
-
-                if ($membership) {
-                    $clubRole = $membership->role;
-                    $clubId   = $membership->club_id;
-                }
-            }
-
-            return response()->json([
-                'message' => 'Session valide',
-                'user'    => [
-                    'id'                 => $person->id,
-                    'first_name'         => $person->first_name,
-                    'last_name'          => $person->last_name,
-                    'email'              => $person->email,
-                    'avatar'             => $person->avatar,
-                    'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
-                    'member_code'        => $person->member_code,
-                    'two_factor_enabled' => $person->two_factor_enabled,
-                    'club_id'            => $clubId,
-                ],
-                'role'      => $person->role,
-                'club_role' => $clubRole,
-                'club_id'   => $clubId,
-            ], 200);
+            return $this->authenticatedResponse($request, $person, 'Session valide');
 
         } catch (\Exception $e) {
             Log::error('Session verification error: ' . $e->getMessage());
             return response()->json(['message' => 'Erreur lors de la vérification de session'], 500);
         }
+    }
+
+    public function selectClub(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'membership_id' => 'required|integer|exists:club_members,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Erreur de validation', 'errors' => $validator->errors()], 422);
+        }
+
+        $person = $request->user();
+        if (!$person) {
+            return response()->json(['message' => 'Non authentifié'], 401);
+        }
+
+        $membership = Club_member::where('id', $request->membership_id)
+            ->where('person_id', $person->id)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$membership) {
+            return response()->json(['message' => 'Adhésion non trouvée pour cet utilisateur'], 404);
+        }
+
+        $request->session()->put('selected_club_id', $membership->club_id);
+        $request->session()->put('selected_membership_id', $membership->id);
+
+        return $this->authenticatedResponse($request, $person, 'Club sélectionné');
     }
 
     public function logout(Request $request)
@@ -278,6 +319,77 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             Log::error('Profile update error: ' . $e->getMessage());
             return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
+        }
+    }
+
+    public function setupAccount(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'name'    => 'required|string|max:200',
+            'phone'   => 'required|string|max:20',
+            'cne'     => 'required|string|max:50',
+            'apogee'  => 'nullable|string|max:50',
+            'filiere' => 'nullable|string|max:100',
+            'niveau'  => 'nullable|string|max:50',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Erreur de validation',
+                'errors'  => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $person = $request->user();
+
+            if (!$person) {
+                return response()->json(['message' => 'Non authentifié'], 401);
+            }
+
+            $nameParts = preg_split('/\s+/', trim($request->name), 2);
+
+            $person->first_name = $nameParts[0] ?? $person->first_name;
+            $person->last_name = $nameParts[1] ?? $person->last_name;
+            $person->phone = $request->phone;
+            $person->cne = $request->cne;
+
+            foreach (['apogee', 'filiere', 'niveau'] as $field) {
+                if (Schema::hasColumn('persons', $field)) {
+                    $person->{$field} = $request->{$field};
+                }
+            }
+
+            $person->save();
+            $person->refresh();
+
+            Log::info('Account setup updated', ['person_id' => $person->id]);
+
+            return response()->json([
+                'message' => 'Compte mis à jour avec succès',
+                'user' => [
+                    'id'                 => $person->id,
+                    'first_name'         => $person->first_name,
+                    'last_name'          => $person->last_name,
+                    'name'               => trim($person->first_name . ' ' . $person->last_name),
+                    'email'              => $person->email,
+                    'phone'              => $person->phone,
+                    'cne'                => $person->cne,
+                    'apogee'             => $person->apogee ?? null,
+                    'filiere'            => $person->filiere ?? null,
+                    'niveau'             => $person->niveau ?? null,
+                    'avatar'             => $person->avatar,
+                    'avatar_url'         => $person->avatar ? url('storage/' . $person->avatar) : null,
+                    'member_code'        => $person->member_code,
+                    'role'               => $person->role,
+                    'two_factor_enabled' => $person->two_factor_enabled,
+                    'is_active'          => $person->is_active,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Account setup error: ' . $e->getMessage());
+            return response()->json(['message' => 'Erreur lors de la mise à jour du compte'], 500);
         }
     }
 
